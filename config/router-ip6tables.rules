@@ -1,0 +1,13 @@
+# No IPv6 routing; retain local control traffic and established connections.
+*filter
+:ROUTER_INPUT - [0:0]
+:ROUTER_FORWARD - [0:0]
+-A ROUTER_INPUT -i lo -j ACCEPT
+-A ROUTER_INPUT -m conntrack --ctstate INVALID -j DROP
+-A ROUTER_INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-A ROUTER_INPUT -p ipv6-icmp -j ACCEPT
+-A ROUTER_INPUT -j DROP
+-A ROUTER_FORWARD -j DROP
+-I INPUT 1 -j ROUTER_INPUT
+-I FORWARD 1 -j ROUTER_FORWARD
+COMMIT

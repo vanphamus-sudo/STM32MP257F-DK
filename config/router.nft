@@ -1,0 +1,42 @@
+# Example only: replace interface names after inspecting the target.
+# Load once with: nft -c -f config/router.nft && nft -f config/router.nft
+# To replace an existing project table, delete and recreate it in ONE nft batch.
+# No global flush: unrelated firewall tables are retained.
+define lan = "end0"
+define wan = "wwu1u1i8"
+define lan_net = 192.168.10.0/24
+
+table inet lte_router {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        iifname "lo" accept
+        ct state invalid drop
+        ct state established,related accept
+        # Verified USB management link to the Windows development PC.
+        iifname "usb0" ip saddr 192.168.7.0/24 tcp dport 22 accept
+        # DHCP clients initially use source address 0.0.0.0.
+        iifname $lan udp sport 68 udp dport 67 accept
+        iifname $lan ip saddr $lan_net tcp dport { 22, 53 } accept
+        iifname $lan ip saddr $lan_net udp dport 53 accept
+        ip protocol icmp accept
+        # Required IPv6 control traffic; IPv6 forwarding remains blocked below.
+        meta l4proto ipv6-icmp accept
+        # Some modem bearer configurations use DHCP on the host interface.
+        iifname $wan udp sport 67 udp dport 68 accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+        ct state invalid drop
+        iifname $lan oifname $wan ip saddr $lan_net ct state { new, established, related } accept
+        iifname $wan oifname $lan ip daddr $lan_net ct state established,related accept
+    }
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}
+table ip lte_router_nat {
+    chain postrouting {
+        type nat hook postrouting priority 100; policy accept;
+        ip saddr $lan_net oifname $wan masquerade
+    }
+}

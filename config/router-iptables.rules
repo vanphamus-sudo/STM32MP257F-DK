@@ -1,0 +1,33 @@
+# Apply using iptables-legacy-restore --noflush after checking for conflicts.
+*filter
+:ROUTER_INPUT - [0:0]
+:ROUTER_FORWARD - [0:0]
+-A ROUTER_INPUT -i lo -j ACCEPT
+-A ROUTER_INPUT -m conntrack --ctstate INVALID -j DROP
+-A ROUTER_INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-A ROUTER_INPUT -i usb0 -s 192.168.7.0/24 -p tcp --dport 22 -j ACCEPT
+-A ROUTER_INPUT -i usb0 -p udp --sport 68 --dport 67 -j ACCEPT
+-A ROUTER_INPUT -i end0 -p udp --sport 68 --dport 67 -j ACCEPT
+-A ROUTER_INPUT -i end0 -s 192.168.10.0/24 -p tcp -m multiport --dports 22,53 -j ACCEPT
+-A ROUTER_INPUT -i end0 -s 192.168.10.0/24 -p udp --dport 53 -j ACCEPT
+-A ROUTER_INPUT -p icmp -j ACCEPT
+-A ROUTER_INPUT -i wlan0 -p udp --sport 68 --dport 67 -j ACCEPT
+-A ROUTER_INPUT -i wlan0 -s 192.168.20.0/24 -p udp --dport 53 -j ACCEPT
+-A ROUTER_INPUT -i wlan0 -s 192.168.20.0/24 -p tcp -m multiport --dports 53,80 -j ACCEPT
+-A ROUTER_INPUT -i end0 -s 192.168.10.0/24 -p tcp --dport 80 -j ACCEPT
+-A ROUTER_INPUT -j DROP
+-A ROUTER_FORWARD -m conntrack --ctstate INVALID -j DROP
+-A ROUTER_FORWARD -i end0 -o wwu1u1i8 -s 192.168.10.0/24 -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT
+-A ROUTER_FORWARD -i wwu1u1i8 -o end0 -d 192.168.10.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-A ROUTER_FORWARD -j DROP
+-I ROUTER_FORWARD 2 -i wlan0 -o wwu1u1i8 -s 192.168.20.0/24 -m conntrack --ctstate NEW,ESTABLISHED,RELATED -j ACCEPT
+-I ROUTER_FORWARD 2 -i wwu1u1i8 -o wlan0 -d 192.168.20.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-I INPUT 1 -j ROUTER_INPUT
+-I FORWARD 1 -j ROUTER_FORWARD
+COMMIT
+*nat
+:ROUTER_NAT - [0:0]
+-A ROUTER_NAT -s 192.168.10.0/24 -o wwu1u1i8 -j MASQUERADE
+-A ROUTER_NAT -s 192.168.20.0/24 -o wwu1u1i8 -j MASQUERADE
+-I POSTROUTING 1 -j ROUTER_NAT
+COMMIT

@@ -1,0 +1,10 @@
+[Unit]
+Description=Connect LTE and apply current bearer settings
+Wants=ModemManager.service
+After=ModemManager.service systemd-networkd.service router-firewall.service
+Requires=router-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/src/router-drivers/connect-lte.sh
+TimeoutStartSec=180

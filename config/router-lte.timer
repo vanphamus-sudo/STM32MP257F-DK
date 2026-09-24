@@ -1,0 +1,10 @@
+[Unit]
+Description=Retry LTE connection and refresh bearer settings
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+Unit=router-lte.service
+
+[Install]
+WantedBy=timers.target
