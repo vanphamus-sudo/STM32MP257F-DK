@@ -1,0 +1,14 @@
+#!/bin/sh
+# Only the managed client publishes connection state. OpenVPN supplies these
+# values after TLS authentication; no certificate uploads can add scripts.
+[ "$INSTANCE" = router_vpn ] || exit 0
+case "$ACTION" in
+    route-up)
+        umask 077
+        printf '%s %s\n' "$daemon_pid" "$ifconfig_local" > /var/run/router-openvpn.connected.new
+        mv /var/run/router-openvpn.connected.new /var/run/router-openvpn.connected
+        ;;
+    down|route-pre-down)
+        rm -f /var/run/router-openvpn.connected
+        ;;
+esac

@@ -1,7 +1,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$SessionPath,
-    [Parameter(Mandatory=$true)][string]$DocumentPath
+    [Parameter(Mandatory=$true)][string]$DocumentPath,
+    [string]$StartText = 'NetworkManager, DHCP and firewall services',
+    [string]$CutoffText = 'Append current Codex conversations to AI helper.docx',
+    [string]$TranscriptDate = '24 September 2026',
+    [string]$TranscriptTitle = 'STM32MP257F-DK: router services, web settings and Wi-Fi hotspot',
+    [switch]$SkipStartMessage
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -10,7 +15,7 @@ $target = (Resolve-Path -LiteralPath $DocumentPath).Path
 $messages = [Collections.Generic.List[object]]::new()
 $started = $false
 $finished = $false
-$cutoff = 'Append current Codex conversations to AI helper.docx'
+$cutoff = $CutoffText
 foreach ($line in (Get-Content -LiteralPath $SessionPath -Encoding UTF8)) {
     $record = $line | ConvertFrom-Json
     if ($record.type -ne 'response_item') { continue }
@@ -26,7 +31,10 @@ foreach ($line in (Get-Content -LiteralPath $SessionPath -Encoding UTF8)) {
     if ($p.type -ne 'message' -or $p.role -notin @('user','assistant') -or $p.channel -eq 'analysis' -or $p.phase -eq 'analysis') { continue }
     $text = (($p.content | Where-Object {$_.type -in @('input_text','output_text')} | ForEach-Object {$_.text}) -join "`n").Trim()
     if (-not $started) {
-        if ($p.role -eq 'user' -and $text -eq 'NetworkManager, DHCP and firewall services') { $started=$true }
+        if ($p.role -eq 'user' -and $text -eq $StartText) {
+            $started=$true
+            if ($SkipStartMessage) { continue }
+        }
         else { continue }
     }
     if ($text.StartsWith('<send_user_message_question_reply>')) {
@@ -65,8 +73,8 @@ try {
         [void]$r.AppendChild($t); [void]$p.AppendChild($r)
         if ($section) { [void]$body.InsertBefore($p,$section) } else { [void]$body.AppendChild($p) }
     }
-    Add-Paragraph 'Codex conversation - 24 September 2026' $true $true
-    Add-Paragraph 'STM32MP257F-DK: router services, web settings and Wi-Fi hotspot' $true
+    Add-Paragraph ('Codex conversation - ' + $TranscriptDate) $true $true
+    Add-Paragraph $TranscriptTitle $true
     Add-Paragraph 'Chronological user messages, Codex replies, progress updates and interactive questions through the append request. Markdown notation is retained. Internal reasoning and tool execution logs are omitted.'
     $index=0
     foreach ($message in $messages) {

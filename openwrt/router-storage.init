@@ -1,0 +1,5 @@
+#!/bin/sh /etc/rc.common
+START=12
+start() {
+    /usr/bin/python3 /usr/lib/router-web/system_update.py --prepare-storage
+}

@@ -3,5 +3,9 @@
 *.nft text eol=lf
 *.network text eol=lf
 *.inc text eol=lf
+*.init text eol=lf
+*.keep text eol=lf
+Makefile text eol=lf
+*.py text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf

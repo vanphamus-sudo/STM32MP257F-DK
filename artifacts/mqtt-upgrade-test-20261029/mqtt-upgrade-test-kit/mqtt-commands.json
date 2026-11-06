@@ -1,0 +1,34 @@
+[
+  {
+    "step": 1,
+    "topic": "/RX/STM32-001/UPGRADE",
+    "retain": false,
+    "payload": {
+      "patch": "https://YOUR-UPDATE-HOST/router-test-A-r21.rupdate"
+    }
+  },
+  {
+    "step": 2,
+    "topic": "/RX/STM32-001/UPGRADE",
+    "retain": false,
+    "payload": {
+      "patch": "https://YOUR-UPDATE-HOST/router-test-B-r22.rupdate"
+    }
+  },
+  {
+    "step": 3,
+    "topic": "/RX/STM32-001/UPGRADE",
+    "retain": false,
+    "payload": {
+      "patch": "https://YOUR-UPDATE-HOST/router-test-A-r23.rupdate"
+    }
+  },
+  {
+    "step": 4,
+    "topic": "/RX/STM32-001/UPGRADE",
+    "retain": false,
+    "payload": {
+      "patch": "https://YOUR-UPDATE-HOST/router-test-B-r24.rupdate"
+    }
+  }
+]

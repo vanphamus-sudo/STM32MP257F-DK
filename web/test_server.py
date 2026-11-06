@@ -62,6 +62,17 @@ class SettingsTests(unittest.TestCase):
 
 
 class HTTPTests(unittest.TestCase):
+    def setUp(self):
+        # Each HTTP case gets independent credentials and the legacy host shape.
+        self.port_patch = patch.object(server, 'PORT', 80)
+        self.port_patch.start()
+        self.addCleanup(self.port_patch.stop)
+        server.SESSIONS.clear()
+        server.ATTEMPTS.clear()
+        salt = '1234567890abcdef' * 2
+        digest = hashlib.pbkdf2_hmac('sha256', b'test-password', bytes.fromhex(salt), 250000).hex()
+        (self.state / 'credentials.json').write_text(json.dumps(dict(salt=salt, hash=digest)))
+
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
@@ -102,6 +113,40 @@ class HTTPTests(unittest.TestCase):
         salt = '1234567890abcdef' * 2
         digest = hashlib.pbkdf2_hmac('sha256', b'test-password', bytes.fromhex(salt), 250000).hex()
         (self.state / 'credentials.json').write_text(json.dumps(dict(salt=salt, hash=digest)))
+
+    def test_modbus_authentication_csrf_secrets_and_export(self):
+        import copy
+        from datetime import datetime, timezone
+        import modbus_settings
+        from modbus_collection import Store
+        data = copy.deepcopy(modbus_settings.DEFAULTS)
+        data['ftp']['password'] = 'private-ftp-password'
+        device = dict(name='Meter', id=1, data_mode='big', registers=[
+            dict(description='Voltage', address=0, format='FLOAT32', unit='V', function=4)])
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True) as backend, \
+                patch.object(modbus_settings, 'STATE', self.state):
+            backend.service_active.return_value = False
+            (self.state / 'modbus.json').write_text(json.dumps(data))
+            with Store(self.state / 'modbus-data') as store:
+                store.append(data, device, [240.5], [''], datetime.now(timezone.utc))
+                ident = store.files()[0]['id']
+            self.assertEqual(self.request('/api/modbus')[0], 401)
+            self.assertEqual(self.request('/api/modbus/files/' + ident)[0], 401)
+            self.assertEqual(self.request('/api/modbus', data)[0], 401)
+            _, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+            auth = {'Cookie': headers['Set-Cookie'].split(';')[0], 'X-CSRF-Token': json.loads(body)['csrf']}
+            code, _, body = self.request('/api/modbus', headers=auth)
+            self.assertEqual(code, 200)
+            self.assertNotIn(b'private-ftp-password', body)
+            self.assertTrue(json.loads(body)['password_saved'])
+            self.assertEqual(self.request('/api/modbus', data, {'Cookie': auth['Cookie']})[0], 403)
+            with patch.object(modbus_settings, 'service'):
+                self.assertEqual(self.request('/api/modbus', data, auth)[0], 200)
+            code, headers, body = self.request('/api/modbus/files/' + ident, headers=auth)
+            self.assertEqual(code, 200)
+            self.assertTrue(headers['Content-Disposition'].startswith('attachment;'))
+            self.assertIn(b'240.5', body)
+            self.assertEqual(self.request('/api/modbus/files/../../credentials.json', headers=auth)[0], 404)
 
     def test_account_change_and_session_revocation(self):
         def login(username, password):
@@ -154,6 +199,76 @@ class HTTPTests(unittest.TestCase):
             apply.assert_called_once_with(VALID)
         self.assertEqual(self.request('/api/logout', {}, auth)[0], 200)
         self.assertEqual(self.request('/api/session', headers={'Cookie': cookie})[0], 401)
+
+    def test_forwarding_requires_authentication_and_csrf(self):
+        self.assertEqual(self.request('/api/port-forwards')[0], 401)
+        self.assertEqual(self.request('/api/port-forwards', {'revision':'x','rules':[]})[0], 401)
+        code, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+        self.assertEqual(code, 200)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        csrf = json.loads(body)['csrf']
+        self.assertEqual(self.request('/api/port-forwards', {'revision':'x','rules':[]}, {'Cookie':cookie})[0], 403)
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+                patch.object(server.port_forwarding, 'apply', return_value={'rules':[]}) as apply:
+            self.assertEqual(self.request('/api/port-forwards', {'revision':'x','rules':[]}, {'Cookie':cookie,'X-CSRF-Token':csrf})[0], 200)
+            apply.assert_called_once()
+
+    def test_openwrt_host_and_origin_port_boundaries(self):
+        with patch.object(server, 'PORT', 8081):
+            host = {'Host': server.HOST + ':8081'}
+            self.assertEqual(self.request('/', headers=host)[0], 200)
+            self.assertEqual(self.request('/')[0], 403)
+            login = dict(username='admin', password='test-password')
+            self.assertEqual(self.request('/api/login', login, host | {'Origin': 'http://' + server.HOST})[0], 403)
+            self.assertEqual(self.request('/api/login', login, host | {'Origin': 'http://' + server.HOST + ':8081'})[0], 200)
+
+    def test_remote_update_endpoints_require_authentication_and_csrf(self):
+        for path in ('/api/firmware/settings', '/api/firmware/update'):
+            self.assertEqual(self.request(path, {})[0], 401)
+        code, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+        cookie = headers['Set-Cookie'].split(';')[0]
+        for path in ('/api/firmware/settings', '/api/firmware/update'):
+            self.assertEqual(self.request(path, {}, {'Cookie': cookie})[0], 403)
+        with patch.object(server, 'OPENWRT', True), patch.object(server.firmware_update, 'submit', return_value={'message': 'queued'}) as submit:
+            self.assertEqual(self.request('/api/firmware/update', {}, {'Cookie': cookie, 'X-CSRF-Token': json.loads(body)['csrf']})[0], 200)
+            submit.assert_called_once()
+
+    def test_serial_assignment_requires_authentication_and_csrf(self):
+        route = '/api/serial-assignment'
+        data = dict(mode='tcp', device='usb:067b:2303', tcp_baud=9600, tcp_port=5000)
+        self.assertEqual(self.request(route, data)[0], 401)
+        code, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+        self.assertEqual(code, 200)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        self.assertEqual(self.request(route, data, {'Cookie':cookie})[0], 403)
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+                patch.object(server.serial_assignment, 'apply', return_value={'mode':'tcp'}) as apply:
+            self.assertEqual(self.request(route, data, {'Cookie':cookie, 'X-CSRF-Token':json.loads(body)['csrf']})[0], 200)
+            apply.assert_called_once()
+
+    def test_mqtt_requires_authentication_and_csrf(self):
+        self.assertEqual(self.request('/api/mqtt', dict(enabled=True))[0], 401)
+        code, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+        self.assertEqual(code, 200)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        self.assertEqual(self.request('/api/mqtt', {}, {'Cookie': cookie})[0], 403)
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+                patch.object(server.mqtt_settings, 'apply', return_value={'enabled': False}) as apply:
+            self.assertEqual(self.request('/api/mqtt', {}, {'Cookie': cookie, 'X-CSRF-Token': json.loads(body)['csrf']})[0], 200)
+            apply.assert_called_once()
+
+    def test_dhcp_bindings_require_authentication_and_csrf(self):
+        self.assertEqual(self.request('/api/dhcp-reservations')[0],401)
+        self.assertEqual(self.request('/api/dhcp-reservations',dict(revision='x',bindings=[]))[0],401)
+        code,headers,body=self.request('/api/login',dict(username='admin',password='test-password'))
+        self.assertEqual(code,200)
+        cookie=headers['Set-Cookie'].split(';')[0]
+        data=dict(revision='x',bindings=[])
+        self.assertEqual(self.request('/api/dhcp-reservations',data,{'Cookie':cookie})[0],403)
+        with patch.object(server,'OPENWRT',True),patch.object(server,'platform',create=True), \
+                patch.object(server.dhcp_reservations,'apply',return_value={'bindings':[]}) as apply:
+            self.assertEqual(self.request('/api/dhcp-reservations',data,{'Cookie':cookie,'X-CSRF-Token':json.loads(body)['csrf']})[0],200)
+            apply.assert_called_once()
 
 
 if __name__ == '__main__':

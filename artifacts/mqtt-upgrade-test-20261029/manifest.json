@@ -1,0 +1,52 @@
+{
+  "board": "STM32MP257F-DK",
+  "scope": "router-application",
+  "initial_base": "stm32-lte-router_1.0.0-r20_all.ipk",
+  "created_at": "2026-10-29T16:34:47+11:00",
+  "sequence": [
+    {
+      "step": 1,
+      "variant": "A",
+      "version": "1.0.0-r21",
+      "base_version": "1.0.0-r20",
+      "file": "router-test-A-r21.rupdate",
+      "bytes": 3619,
+      "reused_files": 42,
+      "total_files": 43,
+      "sha256": "d4e36d60563e0e7acf63ac294b9f2548fde67469139207fd2689a60961cca276"
+    },
+    {
+      "step": 2,
+      "variant": "B",
+      "version": "1.0.0-r22",
+      "base_version": "1.0.0-r21",
+      "file": "router-test-B-r22.rupdate",
+      "bytes": 3599,
+      "reused_files": 42,
+      "total_files": 43,
+      "sha256": "f7a5403f270e1c350cdb10a2381660aff0ed44e9f16f72327a27d32368bf8ef5"
+    },
+    {
+      "step": 3,
+      "variant": "A",
+      "version": "1.0.0-r23",
+      "base_version": "1.0.0-r22",
+      "file": "router-test-A-r23.rupdate",
+      "bytes": 3600,
+      "reused_files": 42,
+      "total_files": 43,
+      "sha256": "01244b69c1e113c25cf45865d69f0fa52a386a9fa5f2c529e3da33bae3f74aab"
+    },
+    {
+      "step": 4,
+      "variant": "B",
+      "version": "1.0.0-r24",
+      "base_version": "1.0.0-r23",
+      "file": "router-test-B-r24.rupdate",
+      "bytes": 3599,
+      "reused_files": 42,
+      "total_files": 43,
+      "sha256": "f18e83cae9eee4e9c038a084dfc997334e375d1e32773de6e7482a7d7333ec06"
+    }
+  ]
+}

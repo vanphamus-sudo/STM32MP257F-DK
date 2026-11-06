@@ -1,0 +1,13 @@
+{
+  "boot_tested": false,
+  "watchdog_tested": false,
+  "health_interfaces": ["lan", "wan"],
+  "max_rootfs_bytes": 1073741824,
+  "boot_partuuid": "REPLACE-WITH-SHARED-BOOT-PARTITION-UUID",
+  "uboot_bootdev": "0:4",
+  "staging_directory": "/mnt/update-storage",
+  "slots": {
+    "A": {"partuuid": "REPLACE-WITH-ROOT-SLOT-A-PARTITION-UUID"},
+    "B": {"partuuid": "REPLACE-WITH-ROOT-SLOT-B-PARTITION-UUID"}
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "enabled": false,
+  "serial": "BOARD001",
+  "interval_minutes": 1,
+  "upload_time": "00:00",
+  "retention_days": 1,
+  "save_mode": "memory",
+  "usb_mount": "/mnt/modbus",
+  "max_storage_mb": 64,
+  "debug": false,
+  "serial_port": {
+    "device": "/dev/ttyUSB0",
+    "baud": 9600,
+    "parity": "none",
+    "data_bits": 8,
+    "stop_bits": 1,
+    "timeout_seconds": 2
+  },
+  "ftp": {
+    "host": "ftp.example.com",
+    "port": 21,
+    "username": "meter",
+    "password": "replace-me",
+    "directory": "/meters",
+    "tls": false
+  },
+  "devices": [
+    {
+      "name": "Eastron METER",
+      "id": 1,
+      "data_mode": "little",
+      "registers": [
+        {
+          "description": "Phase 1 voltage",
+          "address": 0,
+          "format": "FLOAT32",
+          "unit": "V",
+          "function": 4
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Resolve the boot environment before board defaults call fw_printenv.
+router_env_link() {
+    local config=/etc/router-web/system-slots.json uuid device
+    [ -f "$config" ] || return 0
+    uuid=$(jsonfilter -i "$config" -e '@.environment_partuuid')
+    [ -n "$uuid" ] || return 0
+    device=$(blkid -t "PARTUUID=$uuid" -o device)
+    [ -b "$device" ] || return 1
+    mkdir -p /dev/disk/by-partuuid
+    ln -sf "$device" "/dev/disk/by-partuuid/$uuid"
+}
+boot_hook_add preinit_main router_env_link

@@ -1,5 +1,18 @@
 # Board settings page
 
+Software 1.0.0-r12 adds **Network → MAC-to-IP bindings** for fixed LAN DHCP
+addresses. See [DHCP bindings](dhcp-bindings.md) for use and validation details.
+
+OpenWrt software 1.0.0-r10 adds **Firewall → Port forwarding**. See
+[port forwarding](port-forwarding.md) for rule management, ranges, source
+restrictions, NAT loopback, imports and recovery.
+Version 1.0.0-r11 also adds **Firewall → DMZ host**, disabled until configured.
+
+On OpenWrt, use **http://192.168.10.1:8081**. The same page uses UCI/netifd,
+procd and firewall4 through `web/openwrt_backend.py`; follow the
+[OpenWrt guide](openwrt.md) for packaging, persistent credentials, startup and
+recovery. The instructions below describe the existing OpenSTLinux deployment.
+
 Open **http://192.168.10.1** from an Ethernet LAN client. Sign in as `admin` with
 the default password `admin`. The initial password can also be
 retrieved over the existing root USB SSH connection from

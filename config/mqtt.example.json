@@ -1,0 +1,15 @@
+{
+  "enabled": false,
+  "host": "",
+  "port": 8883,
+  "serial": "",
+  "username": "",
+  "password": "",
+  "ca_file": "",
+  "verify_hostname": true,
+  "hardware_version": "STM32MP257F-DK",
+  "lan_ports": [],
+  "tcp_proxy_targets": [],
+  "serial_proxies": {},
+  "handlers": {}
+}

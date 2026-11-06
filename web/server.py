@@ -14,14 +14,31 @@ import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import wifi
+import version_info
+import port_forwarding
+import ethernet
+import dhcp_reservations
+import mqtt_settings
+import mqtt_events
+import firmware_update
+import traffic_stats
+import modbus_settings
+import serial_assignment
+
+OPENWRT = Path('/etc/openwrt_release').exists()
+if OPENWRT:
+    import openwrt_backend as platform
+    import openvpn_client
+    import modem_details
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = Path('/usr/local/lib/router/dnsmasq.conf')
-STATE = Path('/var/lib/router-web')
+STATE = Path('/etc/router-web' if OPENWRT else '/var/lib/router-web')
 LOCK = threading.RLock()
 SESSIONS = {}
 ATTEMPTS = {}
 HOST = '192.168.10.1'
+PORT = 8081 if OPENWRT else 80
 
 
 def password_matches(password, credentials):
@@ -99,6 +116,8 @@ def validate_settings(data):
 
 
 def settings():
+    if OPENWRT:
+        return platform.settings()
     lines = CONFIG.read_text().splitlines()
     pool = next(line.split('=', 1)[1].split(',') for line in lines if line.startswith('dhcp-range='))
     return dict(start=pool[0], end=pool[1], lease_hours=int(pool[3].removesuffix('h')),
@@ -118,6 +137,8 @@ def render_config(data):
 def apply_settings(data):
     data = validate_settings(data)
     with LOCK:
+        if OPENWRT:
+            return platform.apply_settings(data, atomic_write)
         old = CONFIG.read_text()
         candidate = STATE / 'dnsmasq.candidate'
         atomic_write(candidate, render_config(data))
@@ -135,6 +156,8 @@ def apply_settings(data):
 
 
 def status():
+    if OPENWRT:
+        return platform.status()
     services = {}
     for name in ('dnsmasq', 'router-firewall', 'ModemManager'):
         try:
@@ -199,13 +222,18 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def allowed_host(self):
-        return self.headers.get('Host') in (HOST, HOST + ':80')
+        return self.headers.get('Host') in ((HOST, HOST + ':80') if PORT == 80 else (HOST + ':' + str(PORT),))
 
     def do_GET(self):
         if not self.allowed_host():
-            return self.reply(403, dict(error='Open this page at http://192.168.10.1.'))
-        assets = {'/': ('index.html', 'text/html; charset=utf-8'),
+            return self.reply(403, dict(error=f'Open this page at http://{HOST}:{PORT}.'))
+        assets = {'/ethernet.js': ('ethernet.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
+                  '/port-forwarding.js': ('port-forwarding.js', 'text/javascript; charset=utf-8'),
+                  '/dhcp-reservations.js': ('dhcp-reservations.js', 'text/javascript; charset=utf-8'),
                   '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                  '/mqtt.js': ('mqtt.js', 'text/javascript; charset=utf-8'),
+                  '/modbus.js': ('modbus.js', 'text/javascript; charset=utf-8'),
+                  '/firmware.js': ('firmware.js', 'text/javascript; charset=utf-8'),
                   '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if self.path in assets:
             filename, mime = assets[self.path]
@@ -216,10 +244,79 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/session':
             credentials = json.loads((STATE / 'credentials.json').read_text())
             return self.reply(200, dict(csrf=session['csrf'], username=credentials.get('username', 'admin')))
+        if self.path == '/api/modbus' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, modbus_settings.status(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read Modbus storage.'))
+        if self.path.startswith('/api/modbus/files/') and OPENWRT:
+            try:
+                from modbus_collection import Store
+                root = modbus_settings.storage_root(modbus_settings.current())
+                if not (root / 'index.sqlite3').is_file():
+                    raise ValueError('No saved files.')
+                with Store(root) as store:
+                    path = store.get(self.path.removeprefix('/api/modbus/files/'))
+                    handle = path.open('rb')
+                with handle:
+                    # Snapshot the length of an active CSV; do not buffer the file.
+                    length = os.fstat(handle.fileno()).st_size
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/csv; charset=utf-8')
+                    self.send_header('Content-Length', str(length))
+                    self.send_header('Content-Disposition', 'attachment; filename="' + path.name + '"')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.end_headers()
+                    while length:
+                        chunk = handle.read(min(length, 65536))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        length -= len(chunk)
+                return
+            except (OSError, ValueError):
+                return self.reply(404, dict(error='Saved data is unavailable.'))
+        if self.path == '/api/port-forwards' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, port_forwarding.status(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read firewall rules. Check the firewall over USB.'))
+        if self.path == '/api/ethernet' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, ethernet.status(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read Ethernet settings.'))
+        if self.path == '/api/dhcp-reservations' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, dhcp_reservations.status(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read DHCP bindings. Check dnsmasq over USB.'))
+        if self.path == '/api/modem/details' and OPENWRT:
+            try:
+                return self.reply(200, modem_details.collect(platform))
+            except Exception:
+                return self.reply(503, dict(error='Modem details are temporarily unavailable.'))
         if self.path == '/api/status':
             try:
                 with LOCK:
                     data = status()
+                    data['ddns'] = platform.ddns_status() if OPENWRT else dict(available=False)
+                    data['openvpn'] = openvpn_client.status(platform) if OPENWRT else dict(available=False)
+                    data['mqtt'] = mqtt_settings.status(platform) if OPENWRT else dict(available=False)
+                    data['modbus'] = modbus_settings.status(platform) if OPENWRT else dict(available=False)
+                    data['serial_assignment'] = serial_assignment.status(platform) if OPENWRT else dict(available=False)
+                    data['firmware'] = firmware_update.status() if OPENWRT else dict(available=False)
+                    data['traffic'] = traffic_stats.current() if OPENWRT else dict(available=False)
+                    data['at_available'] = OPENWRT
+                    data['port_forwarding_available'] = OPENWRT
+                    data['dhcp_reservations_available'] = OPENWRT
+                    data['ethernet_available'] = OPENWRT
+                    data['software'] = version_info.info()
                 return self.reply(200, data)
             except Exception:
                 self.log_error('Status collection failed')
@@ -227,14 +324,15 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404, dict(error='Not found.'))
 
     def do_POST(self):
-        if (not self.allowed_host() or self.headers.get('Origin') not in
-                (None, 'http://' + HOST, 'http://' + HOST + ':80')):
+        origins = (None, 'http://' + HOST, 'http://' + HOST + ':80') if PORT == 80 else (None, f'http://{HOST}:{PORT}')
+        if not self.allowed_host() or self.headers.get('Origin') not in origins:
             return self.reply(403, dict(error='Request origin is not allowed.'))
         if self.headers.get('Content-Type') != 'application/json' or self.headers.get('Transfer-Encoding'):
             return self.reply(415, dict(error='Expected JSON.'))
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            if not 0 < length <= 4096:
+            limit = 262144 if self.path == '/api/modbus' else 65536 if self.path in ('/api/port-forwards', '/api/dhcp-reservations', '/api/mqtt', '/api/firmware/settings') else 20000 if self.path == '/api/openvpn/certificate' else 4096
+            if not 0 < length <= limit:
                 raise ValueError()
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
@@ -282,10 +380,140 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self.log_error('Settings apply failed; recovery attempted')
                 return self.reply(500, dict(error='Could not apply settings. Check board services over USB before retrying.'))
+        if self.path == '/api/modem/at':
+            if set(data) == {'command'} and isinstance(data['command'], str) and all(32 <= ord(c) <= 126 for c in data['command']) and len(data['command']) <= 256:
+                reserved = version_info.reserved_response(data['command'])
+                if reserved is not None:
+                    return self.reply(200, dict(command=data['command'], response=reserved.decode('ascii'), ok=data['command'].upper() == 'AT$VERSION', truncated=False))
+            if not OPENWRT:
+                return self.reply(400, dict(error='The AT console requires OpenWrt.'))
+            try:
+                return self.reply(200, platform.send_at(data))
+            except ValueError as error:
+                return self.reply(400, dict(error=str(error)))
+            except RuntimeError as error:
+                return self.reply(503, dict(error=str(error)))
+            except Exception:
+                return self.reply(503, dict(error='Cannot reach the LTE module. Check modem status and try again.'))
+        if self.path in ('/api/firmware/settings', '/api/firmware/update'):
+            if not OPENWRT:
+                return self.reply(400, dict(error='Remote updates require OpenWrt.'))
+            try:
+                with LOCK:
+                    result = firmware_update.settings(data) if self.path.endswith('/settings') else firmware_update.submit(data)
+                return self.reply(200, dict(firmware=result, message='Update settings saved.' if self.path.endswith('/settings') else result['message']))
+            except ValueError as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                return self.reply(500, dict(error='Could not process update request. Check router services.'))
+        if self.path == '/api/serial-assignment':
+            if not OPENWRT:
+                return self.reply(400, dict(error='Serial assignment requires OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = serial_assignment.apply(data, platform, atomic_write)
+                return self.reply(200, dict(serial_assignment=updated, message='Serial port assignment saved.'))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                return self.reply(500, dict(error='Could not switch serial port. Previous settings restored; check service logs.'))
+        if self.path == '/api/modbus':
+            if not OPENWRT:
+                return self.reply(400, dict(error='Modbus collection requires OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = modbus_settings.apply(data, platform, atomic_write)
+                return self.reply(200, dict(modbus=updated, message='Modbus settings saved. ' + ('Collector starting.' if updated['enabled'] else 'Collection disabled.')))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                return self.reply(500, dict(error='Could not apply Modbus settings. Check router-modbus logs.'))
+        if self.path == '/api/mqtt':
+            if not OPENWRT:
+                return self.reply(400, dict(error='MQTT settings require OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = mqtt_settings.apply(data, platform, atomic_write)
+                return self.reply(200, dict(mqtt=updated, message='MQTT settings saved. ' + ('Client starting.' if updated['enabled'] else 'Client disabled.')))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                return self.reply(500, dict(error='Could not update MQTT. Check the router-mqtt service.'))
+        if self.path in ('/api/openvpn', '/api/openvpn/certificate', '/api/openvpn/toggle'):
+            if not OPENWRT:
+                return self.reply(400, dict(error='OpenVPN requires OpenWrt.'))
+            try:
+                with LOCK:
+                    action = (openvpn_client.import_certificate if self.path.endswith('/certificate') else
+                              openvpn_client.toggle if self.path.endswith('/toggle') else openvpn_client.apply)
+                    updated = action(data, platform, atomic_write)
+                message = ('Certificate imported.' if self.path.endswith('/certificate') else
+                           ('OpenVPN enabled. Connecting…' if updated['enabled'] else 'OpenVPN disabled.') if self.path.endswith('/toggle') else
+                           'OpenVPN settings saved. Connection starts in the background.')
+                return self.reply(200, dict(openvpn=updated, message=message))
+            except ValueError as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                self.log_error('OpenVPN update failed; recovery attempted')
+                return self.reply(500, dict(error='Could not update OpenVPN. Check its service over USB.'))
+        if self.path == '/api/ethernet':
+            if not OPENWRT:
+                return self.reply(400, dict(error='Ethernet modes require OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = ethernet.apply(data, platform, atomic_write)
+                return self.reply(200, dict(ethernet=updated, message='Ethernet settings saved for the next reboot. Prepare your switch and reconnect after rebooting.'))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except RuntimeError as error:
+                return self.reply(409, dict(error=str(error)))
+            except Exception:
+                self.log_error('Ethernet save failed; recovery attempted')
+                return self.reply(500, dict(error='Could not save Ethernet settings. Check configuration over USB.'))
+        if self.path == '/api/dhcp-reservations':
+            if not OPENWRT:
+                return self.reply(400, dict(error='DHCP bindings require OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = dhcp_reservations.apply(data, platform, atomic_write)
+                return self.reply(200, dict(reservations=updated, message='DHCP bindings saved. Reconnect or renew client leases to use the reserved addresses.'))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except RuntimeError as error:
+                return self.reply(409, dict(error=str(error)))
+            except Exception:
+                self.log_error('DHCP bindings apply failed; recovery attempted')
+                return self.reply(500, dict(error='Could not apply bindings. Previous DHCP settings were restored where possible; check dnsmasq over USB.'))
+        if self.path == '/api/port-forwards':
+            if not OPENWRT:
+                return self.reply(400, dict(error='Port forwarding requires OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = port_forwarding.apply(data, platform, atomic_write)
+                return self.reply(200, dict(port_forwarding=updated, message='Port forwarding and DMZ saved. Firewall reloaded.'))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except RuntimeError as error:
+                return self.reply(409, dict(error=str(error)))
+            except Exception:
+                self.log_error('Port forwarding apply failed; recovery attempted')
+                return self.reply(500, dict(error='Firewall apply failed; previous settings restored where possible. Check firewall status over USB.'))
+        if self.path == '/api/ddns':
+            if not OPENWRT:
+                return self.reply(400, dict(error='DDNS requires OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = platform.apply_ddns(data, atomic_write)
+                return self.reply(200, dict(ddns=updated, message='DDNS settings saved. Updates run in the background.'))
+            except ValueError as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                self.log_error('DDNS apply failed; recovery attempted')
+                return self.reply(500, dict(error='Could not apply DDNS settings. Check DDNS services over USB.'))
         if self.path == '/api/wifi':
             try:
                 with LOCK:
-                    updated = wifi.apply(data, atomic_write)
+                    updated = platform.apply_wifi(data, atomic_write) if OPENWRT else wifi.apply(data, atomic_write)
                 return self.reply(200, dict(wifi=updated, message='Hotspot settings applied. Reconnect Wi-Fi devices if the name or password changed.'))
             except ValueError as error:
                 return self.reply(400, dict(error=str(error)))
@@ -312,6 +540,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, dict(error='Invalid password.'))
             credentials = json.loads((STATE / 'credentials.json').read_text())
             if data.get('username') != credentials.get('username', 'admin') or not password_matches(password, credentials):
+                mqtt_events.web_login(data.get('username', ''), self.client_address[0], False, STATE)
                 return self.reply(401, dict(error='Incorrect username or password.'))
             for token, item in list(SESSIONS.items()):
                 if item['expires'] <= now:
@@ -321,8 +550,9 @@ class Handler(BaseHTTPRequestHandler):
             token = secrets.token_urlsafe(32)
             csrf = secrets.token_urlsafe(32)
             SESSIONS[token] = dict(csrf=csrf, expires=now + 8 * 3600)
+        mqtt_events.web_login(credentials.get('username', 'admin'), self.client_address[0], True, STATE)
         return self.reply(200, dict(csrf=csrf, username=credentials.get('username', 'admin')), cookie=f'router_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800')
 
 
 if __name__ == '__main__':
-    ThreadingHTTPServer((HOST, 80), Handler).serve_forever()
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
