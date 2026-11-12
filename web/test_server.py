@@ -62,6 +62,20 @@ class SettingsTests(unittest.TestCase):
 
 
 class HTTPTests(unittest.TestCase):
+    def test_usb_tethering_requires_authentication_and_csrf(self):
+        route = '/api/usb-tethering'
+        data = dict(enabled=True, revision='x')
+        self.assertEqual(self.request(route)[0], 401)
+        self.assertEqual(self.request(route, data)[0], 401)
+        code, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+        self.assertEqual(code, 200)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        self.assertEqual(self.request(route, data, {'Cookie': cookie})[0], 403)
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+                patch.object(server.usb_tethering, 'apply', return_value={'enabled': True}) as apply:
+            self.assertEqual(self.request(route, data, {'Cookie': cookie, 'X-CSRF-Token': json.loads(body)['csrf']})[0], 200)
+            apply.assert_called_once()
+
     def setUp(self):
         # Each HTTP case gets independent credentials and the legacy host shape.
         self.port_patch = patch.object(server, 'PORT', 80)
@@ -148,6 +162,33 @@ class HTTPTests(unittest.TestCase):
             self.assertIn(b'240.5', body)
             self.assertEqual(self.request('/api/modbus/files/../../credentials.json', headers=auth)[0], 404)
 
+    def test_router_features_authentication_csrf_and_pending_guard(self):
+        from contextlib import nullcontext
+        import router_features
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+                patch.object(router_features, 'locked', side_effect=nullcontext), \
+                patch.object(router_features, 'status', return_value={'settings': {}}), \
+                patch.object(router_features, 'save', return_value={'message': 'saved'}) as save, \
+                patch.object(router_features, 'public_pending', return_value=None):
+            for path in ('features', 'features/backup', 'features/support'):
+                self.assertEqual(self.request('/api/' + path)[0], 401)
+            self.assertEqual(self.request('/api/features', {})[0], 401)
+            _, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+            auth = {'Cookie': headers['Set-Cookie'].split(';')[0], 'X-CSRF-Token': json.loads(body)['csrf']}
+            self.assertEqual(self.request('/api/features', headers=auth)[0], 200)
+            self.assertEqual(self.request('/api/features', {}, {'Cookie': auth['Cookie']})[0], 403)
+            save.assert_not_called()
+            self.assertEqual(self.request('/api/features', {}, auth)[0], 200)
+            save.assert_called_once()
+            with patch.object(router_features, 'public_pending', return_value={'token': 'pending'}):
+                self.assertEqual(self.request('/api/ethernet', {}, auth)[0], 409)
+            settings = router_features.config()
+            settings['passthrough']['enabled'] = True
+            with patch.object(router_features, 'config', return_value=settings):
+                self.assertEqual(self.request('/api/ethernet', {}, auth)[0], 409)
+                self.assertEqual(self.request('/api/port-forwards', {}, auth)[0], 409)
+                self.assertEqual(self.request('/api/openvpn/toggle', {'enabled':True}, auth)[0], 409)
+
     def test_account_change_and_session_revocation(self):
         def login(username, password):
             return self.request('/api/login', dict(username=username, password=password))
@@ -221,6 +262,26 @@ class HTTPTests(unittest.TestCase):
             login = dict(username='admin', password='test-password')
             self.assertEqual(self.request('/api/login', login, host | {'Origin': 'http://' + server.HOST})[0], 403)
             self.assertEqual(self.request('/api/login', login, host | {'Origin': 'http://' + server.HOST + ':8081'})[0], 200)
+
+    def test_openwrt_starts_usb_and_lan_listeners(self):
+        with patch.object(server, 'OPENWRT', True), patch.object(server.threading, 'Thread') as thread, \
+                patch.object(server, 'ThreadingHTTPServer') as http:
+            server.serve_management()
+            thread.assert_called_once_with(target=server.serve_usb_management, daemon=True)
+            thread.return_value.start.assert_called_once()
+            http.assert_called_once_with((server.HOST, server.PORT), server.Handler)
+            http.return_value.serve_forever.assert_called_once()
+
+    def test_usb_management_host_origin_and_authentication(self):
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'PORT', 8081):
+            host = {'Host': '192.168.7.1:8081'}
+            self.assertEqual(self.request('/', headers=host)[0], 200)
+            self.assertEqual(self.request('/api/usb-tethering', headers=host)[0], 401)
+            login = dict(username='admin', password='test-password')
+            self.assertEqual(self.request('/api/login', login, host | {'Origin': 'http://192.168.7.1:8081'})[0], 200)
+            self.assertEqual(self.request('/api/login', login, host | {'Origin': 'http://evil.example:8081'})[0], 403)
+            self.assertEqual(self.request('/', headers={'Host': '192.168.7.1'})[0], 403)
+            self.assertEqual(self.request('/', headers={'Host': '1.2.3.4:8081'})[0], 403)
 
     def test_remote_update_endpoints_require_authentication_and_csrf(self):
         for path in ('/api/firmware/settings', '/api/firmware/update'):

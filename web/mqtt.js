@@ -13,7 +13,7 @@ function fillMqtt(s) {
 function showMqtt(s) {
   el('mqtt-panel').hidden=!s?.available;
   if (s?.available) {
-    el('mqtt-state').textContent=s.state;
+    {const node=el('mqtt-state'),text=String(s.state);if(node.textContent!==text)node.textContent=text;}
     if (!mqttPopulated) fillMqtt(s);
   }
 }

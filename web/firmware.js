@@ -3,9 +3,9 @@ let firmwarePopulated=false;
 function showFirmware(s) {
   el('firmware-panel').hidden=!s?.available;
   if(!s?.available)return;
-  el('firmware-state').textContent=s.job.state;
-  el('firmware-system-ready').textContent=s.system?.ready?'OS/kernel updates: A/B profile ready.':'OS/kernel updates: '+(s.system?.reason||'A/B provisioning required.');
-  el('firmware-result').textContent=[s.job.version,s.job.error,s.job.rolled_back?'Previous application restored.':''].filter(Boolean).join(' · ');
+  {const node=el('firmware-state'),text=String(s.job.state);if(node.textContent!==text)node.textContent=text;}
+  {const node=el('firmware-system-ready'),text=String(s.system?.ready?'OS/kernel updates: A/B profile ready.':'OS/kernel updates: '+(s.system?.reason||'A/B provisioning required.'));if(node.textContent!==text)node.textContent=text;}
+  {const node=el('firmware-result'),text=String([s.job.version,s.job.error,s.job.rolled_back?'Previous application restored.':''].filter(Boolean).join(' · '));if(node.textContent!==text)node.textContent=text;}
   if(!firmwarePopulated){
     el('firmware-enabled').value=String(s.enabled);
     el('firmware-key').value=s.public_key;

@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=stm32-lte-router
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=28
+PKG_RELEASE:=41
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
 
 include $(INCLUDE_DIR)/package.mk
@@ -11,7 +11,7 @@ define Package/stm32-lte-router
   SECTION:=net
   CATEGORY:=Network
   TITLE:=STM32 LTE router settings and provisioning
-  DEPENDS:=+python3 +python3-paho-mqtt +blkid +e2fsprogs +tune2fs +uboot-envtools +dnsmasq +firewall4 +nftables-json +rpcd +uci +ubus +modemmanager +kmod-usb-net-cdc-mbim +kmod-usb-net-qmi-wwan +kmod-usb-serial-option +ddns-scripts +ddns-scripts-services +ddns-scripts-noip +curl +ca-bundle +openvpn-openssl +openssl-util
+  DEPENDS:=+python3 +python3-paho-mqtt +blkid +e2fsprogs +tune2fs +uboot-envtools +dnsmasq +firewall4 +nftables-json +rpcd +uci +ubus +modemmanager +kmod-usb-net-cdc-mbim +kmod-usb-net-qmi-wwan +kmod-usb-serial-option +ddns-scripts +ddns-scripts-services +ddns-scripts-noip +curl +ca-bundle +openvpn-openssl +openssl-util +wireguard-tools +kmod-wireguard +sqm-scripts +kmod-sched-cake +ip-full +odhcp6c +odhcpd-ipv6only +conntrack
 endef
 
 define Package/stm32-lte-router/conffiles
@@ -37,6 +37,8 @@ define Package/stm32-lte-router/install
 	$(INSTALL_BIN) ./router-update-confirm.init $(1)/etc/init.d/router-update-confirm
 	$(INSTALL_BIN) ./router-storage.init $(1)/etc/init.d/router-storage
 	$(INSTALL_BIN) ./router-traffic.init $(1)/etc/init.d/router-traffic
+	$(INSTALL_BIN) ./router-features.init $(1)/etc/init.d/router-features
+	$(INSTALL_BIN) ./router-button.init $(1)/etc/init.d/router-button
 	$(INSTALL_DIR) $(1)/lib/preinit
 	$(INSTALL_DATA) ./router-storage.preinit $(1)/lib/preinit/09_router_storage
 	$(INSTALL_BIN) ./router-openvpn.hotplug $(1)/etc/hotplug.d/openvpn/30-router

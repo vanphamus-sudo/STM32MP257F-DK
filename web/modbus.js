@@ -74,15 +74,19 @@ function showModbus(s) {
   el('modbus-panel').hidden=!s?.available;
   if(!s?.available)return;
   if(!modbusPopulated)fillModbus(s);
-  el('modbus-state').textContent=s.state;
+  if(el('modbus-state').textContent!==s.state)el('modbus-state').textContent=s.state;
   const r=s.runtime;
-  el('modbus-runtime').textContent=[s.storage_error,r?.collection_error,r?.upload_error,r?`Serial TX: ${r.tx_bytes} bytes / RX: ${r.rx_bytes} bytes; read errors: ${r.read_errors}.`:'',r?.last_collection?'Last collection: '+r.last_collection:'',r?.last_upload?'Last upload: '+r.last_upload:''].filter(Boolean).join(' ');
-  el('modbus-files').replaceChildren();
+  const runtimeText=[s.storage_error,r?.collection_error,r?.upload_error,r?`Serial TX: ${r.tx_bytes} bytes / RX: ${r.rx_bytes} bytes; read errors: ${r.read_errors}.`:'',r?.last_collection?'Last collection: '+r.last_collection:'',r?.last_upload?'Last upload: '+r.last_upload:''].filter(Boolean).join(' ');
+  if(el('modbus-runtime').textContent!==runtimeText)el('modbus-runtime').textContent=runtimeText;
+  const files=el('modbus-files'),signature=JSON.stringify(s.files||[]);
+  if(files.modbusSignature===signature&&files.modbusFirst===files.firstChild)return;
+  const fragment=document.createDocumentFragment();
   for(const file of s.files||[]) {
     const row=document.createElement('tr');
     for(const value of [file.name,file.status,Math.ceil(file.bytes/1024)+' KiB']) {const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
-    const cell=document.createElement('td'),link=document.createElement('a');link.href='/api/modbus/files/'+file.id;link.textContent='Export CSV';link.download=file.name;cell.append(link);row.append(cell);el('modbus-files').append(row);
+    const cell=document.createElement('td'),link=document.createElement('a');link.href='/api/modbus/files/'+file.id;link.textContent='Export CSV';link.download=file.name;cell.append(link);row.append(cell);fragment.append(row);
   }
+  files.replaceChildren(fragment);files.modbusSignature=signature;files.modbusFirst=files.firstChild;
 }
 function readModbusForm() {
   const data={serial_port:{},ftp:{},devices:[]};

@@ -5,7 +5,10 @@ import modem_details as modem
 class ModemDetailsTests(unittest.TestCase):
     def test_lte_serving_cell(self):
         data = modem.serving_cell('+QENG: "servingcell","NOCONN","LTE","FDD",505,01,8322A01,36,1275,3,4,4,309F,-86,-10,-57,16,-,-')
-        self.assertEqual(data['band'], 'LTE BAND 3')
+        self.assertIn('LTE BAND 3',data['band'])
+        self.assertIn('1805-1880 MHz',data['band'])
+        self.assertIn('1710-1785 MHz',data['band'])
+        self.assertIn('1812.5 MHz',data['band'])
         self.assertEqual(data['rsrp'], '-86.0 dBm')
         self.assertEqual(data['sinr'], '16.0 dB')
         self.assertEqual(data['cell_id'], str(int('8322A01', 16)))

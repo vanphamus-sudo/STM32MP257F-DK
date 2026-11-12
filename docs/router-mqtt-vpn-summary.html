@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>STM router to MQTT EC2 via VPN</title>
+<style>
+@page { size:A4; margin:16mm; } *{box-sizing:border-box} body{margin:0;color:#183047;font:10pt/1.35 'Segoe UI',Arial,sans-serif} .page{break-after:page} .page:last-child{break-after:auto} h1{font-size:27pt;line-height:1.15;margin:10px 0 12px;color:#102f4e} h2{font-size:15pt;margin:16px 0 7px} h3{font-size:12pt;margin:16px 0 5px} p{margin:7px 0} .eyebrow{font-size:9pt;letter-spacing:1.5px;color:#127e89;text-transform:uppercase;font-weight:700}.intro{font-size:12pt;color:#4e6376}.tag{display:inline-block;background:#e9f4f5;color:#11616b;padding:5px 10px;border-radius:5px;font-size:9pt}.note{background:#edf4fa;border-left:4px solid #2678ae;padding:11px 14px;margin:14px 0}.warn{background:#fff5e6;border-left:4px solid #d88e1b;padding:10px 14px;margin:14px 0} table{width:100%;border-collapse:collapse;font-size:9.5pt;margin:8px 0} th{text-align:left;background:#173c5b;color:white;padding:7px} td{padding:7px;border-bottom:1px solid #dce5eb;vertical-align:top} code{font:9.5pt Consolas,monospace;background:#eff3f6;padding:2px 4px} ul,ol{padding-left:21px;margin:6px 0} li{margin:5px 0}.footer{font-size:8pt;color:#62758a;border-top:1px solid #dce5eb;margin-top:18px;padding-top:8px} a{color:#176b96} svg{width:100%;height:auto;margin:8px 0} .small{font-size:8pt;color:#566b7d}
+</style></head><body>
+<section class="page">
+<div class="eyebrow">STM32MP257F-DK / network design / 9 November 2026</div>
+<h1>Router → MQTT EC2<br>through the VPN</h1>
+<p class="intro">Keep the broker at <b>52.64.103.203:3003/TCP</b>. Carry the router's connection inside OpenVPN to <b>3.24.63.90:1197/UDP</b>, then forward it to the broker.</p>
+<span class="tag">Proposed configuration · deployment not performed by this document</span>
+<svg viewBox="0 0 700 450" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Router sends MQTT inside encrypted UDP 1197 to VPN EC2, which forwards TCP 3003 to MQTT EC2">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#177d8b" stroke-width="1.5"/></marker></defs>
+<rect x="12" y="12" width="676" height="112" rx="12" fill="#edf4fa" stroke="#c4d7e6"/>
+<text x="32" y="40" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#173c5b">1  STM router</text>
+<text x="32" y="65" font-family="Segoe UI,Arial" font-size="14" fill="#183047">Management: 192.168.10.1:8081 • VPN: 10.87.0.2 (previously observed)</text>
+<text x="32" y="89" font-family="Segoe UI,Arial" font-size="14" fill="#183047">MQTT destination stays 52.64.103.203:3003/TCP</text>
+<text x="32" y="111" font-family="Segoe UI,Arial" font-size="13" fill="#566b7d">Host route: 52.64.103.203/32 → tun-router</text>
+<path d="M65 134 L65 191" stroke="#177d8b" stroke-width="4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="90" y="151" font-family="Segoe UI,Arial" font-size="15" font-weight="700" fill="#127581">Encrypted OpenVPN over LTE / Internet</text>
+<text x="90" y="174" font-family="Segoe UI,Arial" font-size="14" fill="#183047">Outer transport: UDP 1197 • Inner connection: MQTT TCP 3003</text>
+<rect x="12" y="205" width="676" height="94" rx="12" fill="#eaf5f3" stroke="#a9d3ca"/>
+<text x="32" y="234" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#12685f">2  VPN EC2</text>
+<text x="32" y="260" font-family="Segoe UI,Arial" font-size="14" fill="#183047">Public: 3.24.63.90:1197/UDP • Tunnel: 10.87.0.1 / tun-stm32</text>
+<text x="32" y="283" font-family="Segoe UI,Arial" font-size="14" fill="#183047">Decrypt → allow TCP 3003 forwarding → source NAT</text>
+<path d="M65 309 L65 357" stroke="#177d8b" stroke-width="4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text x="90" y="327" font-family="Segoe UI,Arial" font-size="15" font-weight="700" fill="#183047">TCP 3003 to 52.64.103.203</text>
+<text x="90" y="350" font-family="Segoe UI,Arial" font-size="14" fill="#875b15">This leg needs MQTT TLS or a separate protected network.</text>
+<rect x="12" y="372" width="676" height="66" rx="12" fill="#edf4fa" stroke="#c4d7e6"/>
+<text x="32" y="400" font-family="Segoe UI,Arial" font-size="19" font-weight="700" fill="#173c5b">3  MQTT EC2 — 52.64.103.203:3003/TCP</text>
+<text x="32" y="424" font-family="Segoe UI,Arial" font-size="14" fill="#183047">Broker sees the VPN EC2 public IP as the client's network source.</text>
+</svg>
+<div class="note"><b>Two ports, two jobs.</b> UDP <b>1197</b> transports the encrypted VPN. TCP <b>3003</b> is the MQTT broker connection carried inside it. The broker does not move to port 1197.</div>
+<p>Replies travel back through the VPN EC2, which reverses the NAT translation and sends them through the tunnel to the router. The router's MQTT host, port, credentials and topics can remain as configured.</p>
+<div class="footer">1 / 2 · Addresses are from project records and the latest discussion, not a fresh live check. VPN subnet: 10.87.0.0/24. The SSH jump host 54.252.89.129 is an administration entry point; it is not the VPN endpoint shown here.</div>
+</section>
+<section class="page">
+<div class="eyebrow">Implementation responsibilities & verification</div>
+<h1>What changes, and where?</h1>
+<table><thead><tr><th style="width:22%">Location</th><th>Required configuration</th></tr></thead><tbody>
+<tr><td><b>STM router</b><br>192.168.10.1</td><td>Enable the existing OpenVPN profile for <b>3.24.63.90:1197/UDP</b>. Confirm a tunnel address in <b>10.87.0.0/24</b>. Persist a host route for <b>52.64.103.203/32</b> through the VPN. MQTT continues to use <b>52.64.103.203:3003</b>.</td></tr>
+<tr><td><b>VPN EC2</b><br>3.24.63.90</td><td>Keep the UDP <b>1197</b> listener reachable from the router's current public address. Enable IPv4 forwarding. Allow the router's tunnel address to reach <b>52.64.103.203 TCP 3003</b>, permit established replies, and apply source NAT on the outbound connection. Persist the rules and review EC2 source/destination checks for this NAT role.</td></tr>
+<tr><td><b>MQTT EC2</b><br>52.64.103.203</td><td>Keep the broker listening on TCP <b>3003</b>. Allow TCP 3003 from the VPN EC2's public IP in the security group and host firewall. After testing and accounting for other clients, restrict broader public access to 3003. Preserve the separate TCP <b>3002</b> listener and access rules if other devices need them.</td></tr>
+</tbody></table>
+<h2>Make the router route persistent</h2>
+<p>The OpenVPN client configuration needs:</p>
+<p><code>route 52.64.103.203 255.255.255.255 vpn_gateway</code></p>
+<p>The router generates <code>/etc/router-web/openvpn/client.conf</code>; add the route to its persistent settings/configuration generator so later saves do not remove it. The current client uses <code>route-nopull</code>, so a route pushed only by the server is insufficient.</p>
+<p class="small">A /32 route covers every port on this one destination IP. Restricting routing to TCP 3003 alone requires policy routing. Ordinary Internet destinations continue to use the existing default route.</p>
+<h2>Verify the complete path</h2>
+<ol>
+<li><b>Connect VPN:</b> check router and server logs, tunnel addresses and successful tunnel traffic. Check UDP 1197 access if authentication never completes.</li>
+<li><b>Check routing:</b> on the router, <code>ip route get 52.64.103.203</code> should select <code>tun-router</code>.</li>
+<li><b>Reconnect MQTT:</b> restart/reconnect the MQTT client so the test uses a new TCP connection. Observe TCP 3003 on the VPN server's tunnel and outbound interfaces.</li>
+<li><b>Confirm delivery:</b> verify the broker sees the VPN EC2 public IP and receives a known test message. Where applicable, verify a subscribed reply reaches the router.</li>
+<li><b>Check persistence:</b> reconnect the VPN and reboot the router; confirm MQTT resumes using the tunnel. Test the intended behaviour when the VPN is down.</li>
+</ol>
+<div class="warn"><b>Security boundary:</b> OpenVPN protects the router-to-VPN-server leg. It does not automatically encrypt the onward connection to the broker. A port number alone does not prove TLS is enabled. For VPN-only MQTT, block direct router-to-broker TCP 3003 outside the tunnel; otherwise the normal route may be used after VPN failure.</div>
+<p class="small"><b>Source notes:</b> project <code>docs/openvpn.md</code> and <code>web/openvpn_client.py</code>; router/VPN/MQTT discussion of 9 November 2026. The VPN profile was reported disabled in the latest discussion; older project records show an earlier successful connection.</p>
+<p class="small"><b>References:</b> <a href="https://openvpn.net/community-docs/community-articles/openvpn-2-7-manual/">OpenVPN manual — routes and route-nopull</a>; <a href="https://docs.aws.amazon.com/vpc/latest/userguide/work-with-nat-instances.html">AWS — NAT instances and source/destination checks</a>.</p>
+<div class="footer">2 / 2 · Proposed destination-specific forwarding design. No server, router or AWS account settings are changed by generating this document.</div>
+</section></body></html>

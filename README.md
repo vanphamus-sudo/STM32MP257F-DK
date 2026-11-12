@@ -1,5 +1,26 @@
 # STM32MP257F-DK LTE Router
 
+[Guided settings page (r37)](docs/guided-settings.md) adds a beginner-friendly
+user guide, glossary, searchable help, setup examples and field explanations
+throughout the router webpage. Installed on the running board with existing
+settings preserved; examples do not populate or apply settings.
+
+[Settings navigation (r36)](docs/navigation.md) groups related settings under
+Status, Internet, Local network, Firewall, VPN, Cellular, Services and System.
+OpenVPN and WireGuard share the VPN group. Installed on the running board with
+existing settings preserved.
+
+[Additional router services (r34)](docs/router-features.md) add watchdog/recovery,
+IPv4 failover, data allowances, backups, alerts, signal history, WireGuard,
+isolated VLAN, SQM, diagnostics, SMS, IPv6 and cellular controls. Optional SIM/GNSS
+controls depend on modem support. [Routed IPv4 passthrough (r35)](docs/ip-passthrough.md)
+hands LTE exclusively to one Ethernet client; eSIM provisioning remains unavailable.
+Installed r35 on the connected board's running root slot on 12 November 2026,
+with existing settings preserved. Host tests and isolated on-board DHCP/firewall
+checks pass; passthrough remains off pending end-to-end client validation.
+
+[USB tethering](docs/usb-tethering.md) can share the router uplink with a PC without Ethernet. Long USER1 recovery restores Ethernet LAN and USB management-only access.
+
 Both dev-kit slots now have [r18 live MQTT telemetry and persistent TX/RX statistics](docs/mqtt-telemetry.md).
 
 The dev kit now has [tested eMMC A/B root slots with r17 installed](docs/ab-flash-status.md).

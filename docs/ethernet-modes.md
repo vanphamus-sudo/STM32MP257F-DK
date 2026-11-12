@@ -1,5 +1,9 @@
 # Ethernet LAN and WAN
 
+Release r29 adds [USER1/LD9 Ethernet recovery](recovery-button.md): hold USER1
+until orange LD9 becomes solid (eight seconds), then release to restore untagged
+Ethernet LAN access and reboot. Hardware acceptance testing remains required.
+
 Release `1.0.0-r28` loads Ethernet settings automatically after sign-in, enabling
 the port-mode selector without requiring a sidebar click or Reload settings.
 Periodic dashboard refreshes preserve unsaved mode/VLAN edits. Verified desktop

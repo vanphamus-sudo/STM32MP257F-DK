@@ -3,6 +3,7 @@ import csv
 import json
 import re
 import subprocess
+import cellular_info
 
 FIELDS = ('selection', 'model', 'uptime', 'status', 'network', 'signal', 'ip', 'dns',
           'sim_status', 'iccid', 'imsi', 'imei', 'lac', 'cell_id', 'rsrp', 'rsrq',
@@ -30,7 +31,7 @@ def serving_cell(response):
         if len(row) < 17 or row[2] != 'LTE':
             return {}
         return dict(network=row[3] + ' LTE', cell_id=str(int(row[6], 16)),
-                    band='LTE BAND ' + str(int(row[9])),
+                    band=cellular_info.band_label(int(row[9]), int(row[8]) if row[8].isdigit() else None),
                     lac='Not applicable (LTE TAC: ' + str(int(row[12], 16)) + ')',
                     rsrp=str(float(row[13])) + ' dBm', rsrq=str(float(row[14])) + ' dB',
                     signal=str(float(row[15])) + ' dBm', sinr=str(float(row[16])) + ' dB')

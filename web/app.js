@@ -1,5 +1,16 @@
 'use strict';
 const el = id => document.getElementById(id);
+function statusText(id,value){
+  const node=el(id),text=String(value??'');
+  if(node.textContent!==text)node.textContent=text;
+}
+const statusLists=new WeakMap();
+function statusList(id,values,render){
+  const node=el(id),signature=JSON.stringify(values),previous=statusLists.get(node);
+  if(previous?.signature===signature&&previous.first===node.firstChild)return;
+  const fragment=document.createDocumentFragment();render(fragment);
+  node.replaceChildren(fragment);statusLists.set(node,{signature,first:node.firstChild});
+}
 let csrf = '', populated = false, refreshing = false, wifiPopulated = false, ddnsPopulated = false, openvpnPopulated = false;
 async function api(path, data) {
   const options = {credentials: 'same-origin', headers: {}};
@@ -31,17 +42,19 @@ async function refresh() {
     el('port-forwarding-panel').hidden = !s.port_forwarding_available;
     el('dhcp-bindings').hidden = !s.dhcp_reservations_available;
     if (typeof showEthernet === 'function') showEthernet(s.ethernet_available);
+    if (typeof showUsbTethering === 'function') showUsbTethering(s.usb_tethering_available);
+    if (typeof showRouterFeatures === 'function') showRouterFeatures(s.router_features_available);
     el('modem-panel').hidden = !s.at_available;
-    el('software-version').textContent=s.software?.string || 'Version unavailable';
+    statusText('software-version',s.software?.string || 'Version unavailable');
     el('status-error').hidden = true;
     el('ddns-panel').hidden = !s.ddns?.available;
     if (s.ddns?.available) {
-      el('ddns-state').textContent=s.ddns.state;
+      statusText('ddns-state',s.ddns.state);
       if (!ddnsPopulated) { fillDdns(s.ddns); ddnsPopulated=true; }
     }
     if (s.wifi && s.wifi.available) {
-      el('wifi-panel').hidden=false; el('wifi-state').textContent=s.wifi.state;
-      el('wifi-clients').textContent=s.wifi.clients;
+      el('wifi-panel').hidden=false; statusText('wifi-state',s.wifi.state);
+      statusText('wifi-clients',s.wifi.clients);
       if (!wifiPopulated) { fillWifi(s.wifi); wifiPopulated=true; }
     }
     el('openvpn-panel').hidden = !s.openvpn?.available;
@@ -49,29 +62,30 @@ async function refresh() {
       showOpenvpnStatus(s.openvpn);
       if (!openvpnPopulated) { fillOpenvpn(s.openvpn); openvpnPopulated=true; }
     }
-    el('board-name').textContent = s.hostname + ' · STM32MP257F-DK';
-    el('lte-state').textContent = s.modem.state === 'connected' ? 'Connected' : s.modem.state;
-    el('lte-detail').textContent = s.modem.operator || 'Mobile network';
-    el('client-count').textContent = s.leases.length;
-    el('wan-address').textContent = (s.wan_addresses || s.addresses.wwu1u1i8 || []).join(', ') || 'No address';
-    el('signal').textContent = s.modem.signal == null ? 'Unavailable' : s.modem.signal + '%';
-    el('dhcp-state').textContent = s.services.dnsmasq === 'active' ? 'DHCP active' : 'DHCP ' + s.services.dnsmasq;
-    el('firewall-state').textContent = s.services['router-firewall'] === 'active' ? 'Active · IPv4 NAT' : s.services['router-firewall'];
-    el('uptime').textContent = Math.floor(s.uptime / 3600) + 'h ' + Math.floor(s.uptime % 3600 / 60) + 'm';
-    el('clients').replaceChildren();
+    statusText('board-name',s.hostname + ' · STM32MP257F-DK');
+    statusText('lte-state',s.modem.state === 'connected' ? 'Connected' : s.modem.state);
+    statusText('lte-detail',s.modem.operator || 'Mobile network');
+    statusText('client-count',s.leases.length);
+    statusText('wan-address',(s.wan_addresses || s.addresses.wwu1u1i8 || []).join(', ') || 'No address');
+    statusText('signal',s.modem.signal == null ? 'Unavailable' : s.modem.signal + '%');
+    statusText('dhcp-state',s.services.dnsmasq === 'active' ? 'DHCP active' : 'DHCP ' + s.services.dnsmasq);
+    statusText('firewall-state',s.services['router-firewall'] === 'active' ? 'Active · IPv4 NAT' : s.services['router-firewall']);
+    statusText('uptime',Math.floor(s.uptime / 3600) + 'h ' + Math.floor(s.uptime % 3600 / 60) + 'm');
+    statusList('clients',s.leases,fragment=>{
     for (const client of s.leases) {
       const row=document.createElement('tr');
       for (const value of [client.name === '*' ? 'Unnamed device' : client.name, client.address, client.mac]) {
         const cell=document.createElement('td'); cell.textContent=value; row.append(cell);
       }
-      el('clients').append(row);
+      fragment.append(row);
     }
-    if (!s.leases.length) { const row=document.createElement('tr'), cell=document.createElement('td'); cell.colSpan=3; cell.textContent='No active DHCP leases yet.'; row.append(cell); el('clients').append(row); }
+    if (!s.leases.length) { const row=document.createElement('tr'), cell=document.createElement('td'); cell.colSpan=3; cell.textContent='No active DHCP leases yet.'; row.append(cell); fragment.append(row); }
+    });
     if (!populated) { fillSettings(s.settings); populated = true; }
-  } catch (error) { el('status-error').textContent = error.message; el('status-error').hidden=false; }
+  } catch (error) { statusText('status-error',error.message); el('status-error').hidden=false; }
   finally { refreshing=false; }
 }
-async function showDashboard() { el('login-panel').hidden=true; el('dashboard').hidden=false; await refresh(); }
+async function showDashboard() { el('login-panel').hidden=true; el('dashboard').hidden=false; await refresh(); openNavigationTarget(location.hash); }
 el('login-form').addEventListener('submit', async event => {
   event.preventDefault(); const button=event.submitter; button.disabled=true; el('login-message').textContent='';
   try { const result=await api('login', {username:el('username').value,password:el('password').value}); csrf=result.csrf; el('account-username').value=result.username; el('password').value=''; await showDashboard(); }
@@ -142,17 +156,18 @@ function setOpenvpnBusy(busy) {
 }
 function showOpenvpnStatus(s) {
   openvpnEnabled=s.enabled;
-  el('toggle-openvpn').textContent=s.enabled ? 'Disable OpenVPN' : 'Enable OpenVPN';
+  statusText('toggle-openvpn',s.enabled ? 'Disable OpenVPN' : 'Enable OpenVPN');
   el('toggle-openvpn').setAttribute('aria-pressed',String(s.enabled));
   el('toggle-openvpn').disabled=openvpnBusy;
-  el('openvpn-state').textContent=s.state;
-  el('openvpn-ip').textContent=s.local_ip || 'No address';
-  el('openvpn-certificates').replaceChildren();
+  statusText('openvpn-state',s.state);
+  statusText('openvpn-ip',s.local_ip || 'No address');
+  statusList('openvpn-certificates',s.certificates,fragment=>{
   for (const [kind, item] of Object.entries(s.certificates)) {
     const row=document.createElement('li');
     row.textContent=item.name + ': ' + (item.present ? (item.details || 'Imported') : 'Not imported');
-    el('openvpn-certificates').append(row);
+    fragment.append(row);
   }
+  });
 }
 function fillOpenvpn(s) {
   for (const field of vpnFields) el('openvpn-'+field).value=String(s[field]);
@@ -202,7 +217,28 @@ function syncNavigation() {
     const hidden = el(item.dataset.feature).hidden;
     if (item.hidden !== hidden) item.hidden = hidden;
   });
+  navigation.querySelectorAll('[data-nav-group]').forEach(group => {
+    const hidden = !Array.from(group.querySelectorAll('a')).some(link => !link.hidden);
+    if(group.hidden!==hidden)group.hidden=hidden;
+  });
 }
+function openNavigationTarget(hash) {
+  const target = document.getElementById(hash.replace(/^#/, ''));
+  if (!target || target.closest('[hidden]')) return;
+  const selected=Array.from(navigation.querySelectorAll('a')).find(link=>link.hash===hash);
+  if(selected){
+    navigation.querySelectorAll('a').forEach(link=>link.removeAttribute('aria-current'));
+    selected.setAttribute('aria-current','location');
+    selected.closest('details').open=true;
+  }
+  for (let node=target; node && node!==el('dashboard'); node=node.parentElement) {
+    if (node.tagName==='DETAILS') node.open=true;
+  }
+  target.tabIndex=-1;
+  target.focus({preventScroll:true});
+  target.scrollIntoView({block:'start'});
+}
+window.addEventListener('hashchange',()=>openNavigationTarget(location.hash));
 new MutationObserver(syncNavigation).observe(el('dashboard'), {
   subtree: true, attributes: true, attributeFilter: ['hidden']
 });
@@ -218,8 +254,7 @@ navigation.addEventListener('click', event => {
   link.setAttribute('aria-current', 'location');
   navigation.classList.remove('is-open');
   el('menu-toggle').setAttribute('aria-expanded', 'false');
-  const target = document.getElementById(link.hash.slice(1));
-  if (target) { target.tabIndex = -1; target.focus({preventScroll: true}); }
+  openNavigationTarget(link.hash);
 });
 
 let modemRefreshing = false;
@@ -252,12 +287,14 @@ navigation.querySelectorAll('a[href="#modem-panel"]').forEach(link => link.addEv
 function showTraffic(s) {
   el('traffic-panel').hidden=!s?.available;
   if(!s?.available)return;
-  el('traffic-state').textContent=s.stale_seconds>20?'Last recorded sample':'Recording';
-  el('traffic-rows').replaceChildren();
+  statusText('traffic-state',s.stale_seconds>20?'Last recorded sample':'Recording');
   const size=value=>{const units=['B','KiB','MiB','GiB','TiB'];let n=Number(value||0),i=0;while(n>=1024&&i<4){n/=1024;i++;}return n.toFixed(i?2:0)+' '+units[i];};
-  for(const [role,item] of Object.entries(s.roles)){
+  const values=Object.entries(s.roles).map(([role,item])=>[role.toUpperCase()+' / '+(item.device||'unavailable'),size(item.total_tx_bytes),size(item.total_rx_bytes),size(item.tx_bytes_per_second)+'/s',size(item.rx_bytes_per_second)+'/s']);
+  statusList('traffic-rows',values,fragment=>{
+  for(const values_ of values){
     const row=document.createElement('tr');
-    for(const value of [role.toUpperCase()+' / '+(item.device||'unavailable'),size(item.total_tx_bytes),size(item.total_rx_bytes),size(item.tx_bytes_per_second)+'/s',size(item.rx_bytes_per_second)+'/s']){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
-    el('traffic-rows').append(row);
+    for(const value of values_){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}
+    fragment.append(row);
   }
+  });
 }

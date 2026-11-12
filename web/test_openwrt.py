@@ -118,7 +118,9 @@ class OpenWrtTests(unittest.TestCase):
         self.assertIn('"192.168.7.1"', result['network'])
         sections = result['firewall'].split('config ')
         forwards = [s for s in sections if s.startswith('forwarding ')]
-        self.assertEqual(len(forwards), 2)
+        self.assertEqual(len(forwards), 3)
+        usb_forward = next(s for s in forwards if s.startswith('forwarding "management_wan"'))
+        self.assertIn('option enabled "1"', usb_forward)
         self.assertTrue(all('option dest "wan"' in s and 'option family "ipv4"' in s for s in forwards))
         incoming_wan = [s for s in sections if s.startswith('rule ') and 'option src "wan"' in s]
         self.assertEqual(len(incoming_wan), 1)

@@ -1,6 +1,6 @@
 """Immutable identity for this software release, shared by UI and AT replies."""
-VERSION = '1.0.0-r28'
-CREATED_AT = '2026-11-06T13:21:56+11:00'
+VERSION = '1.0.0-r41'
+CREATED_AT = '2026-11-12T17:17:28+11:00'
 VERSION_STRING = 'STM32 Router ' + VERSION + ' | created ' + CREATED_AT
 
 

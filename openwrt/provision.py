@@ -78,6 +78,11 @@ def configs(lan, modem, usb=None):
     if usb:
         firewall += section('rule', 'management_dhcp', name='USB management DHCP', src='management',
                             proto='udp', src_port='68', dest_port='67', family='ipv4', target='ACCEPT')
+        firewall += section('rule', 'management_dns', name='USB DNS', src='management',
+                            proto='tcp udp', dest_port='53', family='ipv4', target='ACCEPT')
+        firewall += section('forwarding', 'management_wan', src='management', dest='wan', family='ipv4', enabled='1')
+        firewall += section('rule', 'management_web', name='USB settings', src='management',
+                            proto='tcp', dest_port='8081', family='ipv4', target='ACCEPT')
     return dict(network=network, dhcp=dhcp, firewall=firewall)
 
 

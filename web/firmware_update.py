@@ -163,7 +163,7 @@ def command(*args, timeout=120):
 
 def active_services():
     data = json.loads(command('ubus', 'call', 'service', 'list'))
-    return [name for name in ('router-web', 'router-mqtt', 'router-modbus', 'router-at', 'router-serial')
+    return [name for name in ('router-web', 'router-mqtt', 'router-modbus', 'router-at', 'router-serial', 'router-button', 'router-features')
             if any(instance.get('running') for instance in data.get(name, {}).get('instances', {}).values())]
 
 

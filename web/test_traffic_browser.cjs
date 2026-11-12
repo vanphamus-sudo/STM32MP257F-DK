@@ -3,7 +3,8 @@ const target=path.resolve('local/traffic-browser');fs.mkdirSync(target,{recursiv
 fs.copyFileSync('web/style.css',path.join(target,'style.css'));
 const panel=fs.readFileSync('web/index.html','utf8').match(/<section id="traffic-panel"[\s\S]*?<\/section>/)[0];
 const fn=fs.readFileSync('web/app.js','utf8').match(/function showTraffic\(s\) \{[\s\S]*$/)[0];
-const script=`const el=id=>document.getElementById(id);${fn}
+const helpers=fs.readFileSync('web/app.js','utf8').split('function statusText')[1].split('let csrf')[0];
+const script=`const el=id=>document.getElementById(id);function statusText${helpers}${fn}
 try{const check=(ok,message)=>{if(!ok)throw Error(message);};
 showTraffic({available:true,stale_seconds:0,roles:{wan:{device:'wwan0',total_tx_bytes:1048576,total_rx_bytes:1073741824,tx_bytes_per_second:1024,rx_bytes_per_second:2048}}});
 check(!el('traffic-panel').hidden,'Visible');check(el('traffic-rows').textContent.includes('1.00 MiB')&&el('traffic-rows').textContent.includes('1.00 GiB'),'Byte units');

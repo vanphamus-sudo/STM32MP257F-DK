@@ -17,6 +17,7 @@ import wifi
 import version_info
 import port_forwarding
 import ethernet
+import usb_tethering
 import dhcp_reservations
 import mqtt_settings
 import mqtt_events
@@ -24,6 +25,7 @@ import firmware_update
 import traffic_stats
 import modbus_settings
 import serial_assignment
+import router_features
 
 OPENWRT = Path('/etc/openwrt_release').exists()
 if OPENWRT:
@@ -39,6 +41,26 @@ SESSIONS = {}
 ATTEMPTS = {}
 HOST = '192.168.10.1'
 PORT = 8081 if OPENWRT else 80
+USB_HOST = '192.168.7.1'
+
+
+def allowed_authorities():
+    hosts = (HOST, USB_HOST) if OPENWRT else (HOST,)
+    return tuple(authority for host in hosts for authority in
+                 ((host, host + ':80') if PORT == 80 else (host + ':' + str(PORT),)))
+
+
+def serve_usb_management():
+    # USB may appear after LAN at boot. Bind only its management address.
+    while True:
+        try:
+            http = ThreadingHTTPServer((USB_HOST, PORT), Handler)
+        except OSError:
+            time.sleep(5)
+            continue
+        with http:
+            http.serve_forever()
+
 
 
 def password_matches(password, credentials):
@@ -222,12 +244,12 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def allowed_host(self):
-        return self.headers.get('Host') in ((HOST, HOST + ':80') if PORT == 80 else (HOST + ':' + str(PORT),))
+        return self.headers.get('Host') in allowed_authorities()
 
     def do_GET(self):
         if not self.allowed_host():
             return self.reply(403, dict(error=f'Open this page at http://{HOST}:{PORT}.'))
-        assets = {'/ethernet.js': ('ethernet.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
+        assets = {'/user-guide.js': ('user-guide.js', 'text/javascript; charset=utf-8'), '/router-features.js': ('router-features.js', 'text/javascript; charset=utf-8'), '/usb-tethering.js': ('usb-tethering.js', 'text/javascript; charset=utf-8'), '/ethernet.js': ('ethernet.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
                   '/port-forwarding.js': ('port-forwarding.js', 'text/javascript; charset=utf-8'),
                   '/dhcp-reservations.js': ('dhcp-reservations.js', 'text/javascript; charset=utf-8'),
                   '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
@@ -244,6 +266,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/session':
             credentials = json.loads((STATE / 'credentials.json').read_text())
             return self.reply(200, dict(csrf=session['csrf'], username=credentials.get('username', 'admin')))
+        if self.path in ('/api/features', '/api/features/backup', '/api/features/support') and OPENWRT:
+            try:
+                with LOCK, router_features.locked():
+                    collect = {'/api/features': router_features.status,
+                               '/api/features/backup': router_features.backup,
+                               '/api/features/support': router_features.support}[self.path]
+                    return self.reply(200, collect(platform))
+            except Exception:
+                return self.reply(503, dict(error='Router features are temporarily unavailable.'))
         if self.path == '/api/modbus' and OPENWRT:
             try:
                 with LOCK:
@@ -284,6 +315,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, port_forwarding.status(platform))
             except Exception:
                 return self.reply(503, dict(error='Cannot read firewall rules. Check the firewall over USB.'))
+        if self.path == '/api/usb-tethering' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, usb_tethering.status(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read USB tethering settings.'))
         if self.path == '/api/ethernet' and OPENWRT:
             try:
                 with LOCK:
@@ -316,6 +353,8 @@ class Handler(BaseHTTPRequestHandler):
                     data['port_forwarding_available'] = OPENWRT
                     data['dhcp_reservations_available'] = OPENWRT
                     data['ethernet_available'] = OPENWRT
+                    data['usb_tethering_available'] = OPENWRT
+                    data['router_features_available'] = OPENWRT
                     data['software'] = version_info.info()
                 return self.reply(200, data)
             except Exception:
@@ -324,14 +363,14 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404, dict(error='Not found.'))
 
     def do_POST(self):
-        origins = (None, 'http://' + HOST, 'http://' + HOST + ':80') if PORT == 80 else (None, f'http://{HOST}:{PORT}')
+        origins = (None,) + tuple('http://' + authority for authority in allowed_authorities())
         if not self.allowed_host() or self.headers.get('Origin') not in origins:
             return self.reply(403, dict(error='Request origin is not allowed.'))
         if self.headers.get('Content-Type') != 'application/json' or self.headers.get('Transfer-Encoding'):
             return self.reply(415, dict(error='Expected JSON.'))
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            limit = 262144 if self.path == '/api/modbus' else 65536 if self.path in ('/api/port-forwards', '/api/dhcp-reservations', '/api/mqtt', '/api/firmware/settings') else 20000 if self.path == '/api/openvpn/certificate' else 4096
+            limit = 1048576 if self.path == '/api/features/restore' else 262144 if self.path == '/api/modbus' else 65536 if self.path in ('/api/port-forwards', '/api/dhcp-reservations', '/api/mqtt', '/api/firmware/settings', '/api/features') else 20000 if self.path == '/api/openvpn/certificate' else 4096
             if not 0 < length <= limit:
                 raise ValueError()
             data = json.loads(self.rfile.read(length))
@@ -346,6 +385,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(401, dict(error='Sign in again to continue.'))
         if not hmac.compare_digest(self.headers.get('X-CSRF-Token', ''), session['csrf']):
             return self.reply(403, dict(error='Refresh the page and try again.'))
+        if self.path in ('/api/features', '/api/features/action', '/api/features/diagnostics',
+                         '/api/features/restore', '/api/features/sms'):
+            if not OPENWRT:
+                return self.reply(404, dict(error='These router features require OpenWrt.'))
+            try:
+                with LOCK, router_features.locked():
+                    handlers = {'/api/features': router_features.save,
+                                '/api/features/action': router_features.action,
+                                '/api/features/diagnostics': router_features.diagnose,
+                                '/api/features/restore': router_features.restore,
+                                '/api/features/sms': router_features.sms}
+                    return self.reply(200, handlers[self.path](data, platform))
+            except (ValueError, TypeError, KeyError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                self.log_error('Router feature operation failed')
+                return self.reply(503, dict(error='Operation failed. Check router services and package support; any pending network change will roll back automatically.'))
+        if OPENWRT and self.path in ('/api/wifi', '/api/ddns', '/api/ethernet', '/api/usb-tethering', '/api/port-forwards', '/api/dhcp-reservations', '/api/openvpn', '/api/openvpn/toggle', '/api/openvpn/certificate', '/api/firmware/update', '/api/mqtt', '/api/modbus', '/api/serial-assignment') and router_features.public_pending():
+            return self.reply(409, dict(error='Confirm or roll back the pending router network change first.'))
+        if OPENWRT and self.path in ('/api/ethernet', '/api/port-forwards', '/api/openvpn', '/api/openvpn/toggle') and router_features.config()['passthrough']['enabled']:
+            return self.reply(409, dict(error='Disable IP passthrough before changing Ethernet, NAT rules or router VPN settings.'))
         if self.path == '/api/logout':
             with LOCK:
                 for token, item in list(SESSIONS.items()):
@@ -372,6 +432,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, dict(username=username, message='Login details updated. Sign in again.'),
                               cookie='router_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict')
         if self.path == '/api/settings':
+            if OPENWRT and router_features.public_pending():
+                return self.reply(409, dict(error='Confirm or roll back the pending router network change first.'))
             try:
                 updated = apply_settings(data)
                 return self.reply(200, dict(settings=updated, message='Settings applied. Renew client DHCP leases to use the new range or lease time.'))
@@ -456,6 +518,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self.log_error('OpenVPN update failed; recovery attempted')
                 return self.reply(500, dict(error='Could not update OpenVPN. Check its service over USB.'))
+        if self.path == '/api/usb-tethering':
+            if not OPENWRT:
+                return self.reply(400, dict(error='USB tethering requires OpenWrt.'))
+            try:
+                with LOCK:
+                    updated = usb_tethering.apply(data, platform, atomic_write)
+                return self.reply(200, dict(usb=updated, message='USB internet gateway advertisement saved for the next reboot. After reboot, reconnect USB to renew the gateway and DNS settings. Management remains at 192.168.7.1.'))
+            except (ValueError, TypeError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except RuntimeError as error:
+                return self.reply(409, dict(error=str(error)))
+            except Exception:
+                self.log_error('USB tethering save failed; recovery attempted')
+                return self.reply(500, dict(error='Could not save USB tethering settings.'))
         if self.path == '/api/ethernet':
             if not OPENWRT:
                 return self.reply(400, dict(error='Ethernet modes require OpenWrt.'))
@@ -554,5 +630,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(200, dict(csrf=csrf, username=credentials.get('username', 'admin')), cookie=f'router_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800')
 
 
-if __name__ == '__main__':
+def serve_management():
+    if OPENWRT:
+        threading.Thread(target=serve_usb_management, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+
+
+if __name__ == '__main__':
+    serve_management()

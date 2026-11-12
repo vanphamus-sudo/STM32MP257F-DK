@@ -141,12 +141,18 @@ def main():
     put(root, '/etc/shadow', debug(BASE / 'rootfs.img', 'cat /etc/shadow'), 0o600)
     for path in ('/etc/urandom.seed', '/etc/machine-id', '/etc/uhttpd.key', '/etc/uhttpd.crt'):
         remove(root, path)
-    for filename in ('serial_assignment.py', 'modbus_collection.py', 'modbus_settings.py', 'modbus.js', 'traffic_stats.py', 'mqtt_metrics.py', 'system_update.py', 'firmware_update.py', 'update_bundle.py', 'firmware.js', 'mqtt_events.py', 'mqtt_settings.py', 'mqtt.js', 'mqtt_client.py', 'mqtt_protocol.py', 'mqtt_data.py', 'mqtt_proxy.py', 'server.py', 'wifi.py', 'openwrt_backend.py', 'openvpn_client.py', 'modem_details.py', 'serial_tcp.py', 'at_tcp.py', 'version_info.py', 'port_forwarding.py', 'port-forwarding.js', 'dhcp_reservations.py', 'dhcp-reservations.js', 'ethernet.py', 'ethernet.js', 'index.html', 'app.js', 'style.css'):
+    for filename in ('cellular_info.py', 'mobile-networks.json', 'ip_passthrough.py', 'router_features.py', 'router_supervisor.py', 'router-features.js', 'user-guide.js', 'serial_assignment.py', 'modbus_collection.py', 'modbus_settings.py', 'modbus.js', 'traffic_stats.py', 'mqtt_metrics.py', 'system_update.py', 'firmware_update.py', 'update_bundle.py', 'firmware.js', 'mqtt_events.py', 'mqtt_settings.py', 'mqtt.js', 'mqtt_client.py', 'mqtt_protocol.py', 'mqtt_data.py', 'mqtt_proxy.py', 'server.py', 'wifi.py', 'openwrt_backend.py', 'openvpn_client.py', 'modem_details.py', 'serial_tcp.py', 'at_tcp.py', 'version_info.py', 'port_forwarding.py', 'port-forwarding.js', 'dhcp_reservations.py', 'dhcp-reservations.js', 'ethernet.py', 'recovery_button.py', 'ethernet.js', 'index.html', 'app.js', 'style.css'):
         put(root, '/usr/lib/router-web/' + filename, (REPO / 'web' / filename).read_bytes().replace(b'\r\n', b'\n'))
     for filename in ('initialize.py', 'provision.py', 'provision-system-updates.py', 'factory-initialize.py', 'factory-modem.py'):
         put(root, '/usr/lib/router-web/' + filename, (REPO / 'openwrt' / filename).read_bytes().replace(b'\r\n', b'\n'))
     put(root, '/etc/init.d/router-serial', (REPO / 'openwrt/router-serial.init').read_bytes().replace(b'\r\n', b'\n'), 0o755)
+    put(root, '/etc/init.d/router-features', (REPO / 'openwrt/router-features.init').read_bytes().replace(b'\r\n', b'\n'), 0o755)
+    symlink(root, '/etc/rc.d/S95router-features', '../init.d/router-features')
+    symlink(root, '/etc/rc.d/K08router-features', '../init.d/router-features')
     put(root, '/etc/init.d/router-traffic', (REPO / 'openwrt/router-traffic.init').read_bytes().replace(b'\r\n', b'\n'), 0o755)
+    put(root, '/etc/init.d/router-button', (REPO / 'openwrt/router-button.init').read_bytes().replace(b'\r\n', b'\n'), 0o755)
+    symlink(root, '/etc/rc.d/S18router-button', '../init.d/router-button')
+    symlink(root, '/etc/rc.d/K10router-button', '../init.d/router-button')
     symlink(root, '/etc/rc.d/S94router-traffic', '../init.d/router-traffic')
     symlink(root, '/etc/rc.d/K09router-traffic', '../init.d/router-traffic')
     put(root, '/etc/init.d/router-storage', (REPO / 'openwrt/router-storage.init').read_bytes().replace(b'\r\n', b'\n'), 0o755)

@@ -18,7 +18,7 @@ main{max-width:1560px;margin:30px auto;padding:0 30px}
 .router-navigation summary{padding:16px 22px;cursor:pointer;font-weight:600;font-size:13px;list-style:none;display:flex;justify-content:space-between}
 .router-navigation summary::-webkit-details-marker{display:none}
 .router-navigation summary::after{content:'+';color:#b8ceef}
-.router-navigation details[open]>summary::after{content:'?'}
+.router-navigation details[open]>summary::after{content:'-'}
 .router-navigation a{display:block;padding:12px 20px 12px 34px;color:#d9e4f6;text-decoration:none;border-left:3px solid transparent;font-size:12px;line-height:1.5}
 .router-navigation a:hover{background:#ffffff10;color:#fff}
 .router-navigation a[aria-current]{background:#ffffff19;border-left-color:#8ed9ed;color:#fff;font-weight:600}
@@ -50,3 +50,23 @@ button:not(.secondary){background:var(--router-blue)}button:not(.secondary):hove
 
 #firmware-panel textarea{display:block;width:100%;max-width:100%;resize:vertical;font:13px Consolas,monospace;border:1px solid #d4dfe5;border-radius:7px;padding:12px;margin-top:9px;background:#fbfcfd}#firmware-panel form+form{margin-top:24px}
 .modbus-device,.modbus-register{min-width:0;border:1px solid var(--border,#dce3ed);border-radius:10px;padding:16px;margin:16px 0}.modbus-device legend{font-weight:700}.modbus-register{background:rgba(128,128,128,.03)}#modbus-devices input,#modbus-devices select{min-width:0;width:100%}#modbus-files td:first-child{overflow-wrap:anywhere;max-width:440px}#modbus-runtime{overflow-wrap:anywhere}
+#router-features-panel details{border-top:1px solid #dce3ed;margin-top:18px;padding-top:16px}
+#router-features-panel summary{cursor:pointer;font-weight:600;margin-bottom:16px}
+#router-features-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}
+#router-features-panel input{min-width:0;max-width:100%}
+.user-manual{margin:22px 0;font-size:14px;line-height:1.8}
+.user-manual h2{font-size:25px}.user-manual ol{padding-left:24px}.user-manual li{margin:10px 0}
+.user-manual details{border-top:1px solid #dce5ed;padding-top:14px;margin-top:18px}
+.user-manual summary,.setting-guide summary{cursor:pointer;font-weight:650;line-height:1.6}
+.manual-recovery{padding:16px;background:#fff4e5;border-left:3px solid #a56b24;color:#60451e;border-radius:6px}
+.manual-glossary{margin:14px 0}.manual-glossary dt{font-size:14px;color:#213d4c;font-weight:650;margin-top:16px}.manual-glossary dd{font-size:14px;font-weight:400;line-height:1.8}
+.manual-topic-list{columns:2;column-gap:28px;padding-left:22px}.manual-topic-list li{break-inside:avoid}.manual-topic-list a{color:#183a70;overflow-wrap:anywhere}.manual-topic-list small{font-size:12px;color:#526578}
+.setting-guide{margin:16px 0 20px;padding:16px 18px;background:#f2f6fc;border:1px solid #d4dfef;border-left:3px solid #426caa;border-radius:7px;color:#30475e;font-size:14px;line-height:1.8}
+.setting-guide>p{margin:0 0 10px}.setting-guide>p:last-child{margin-bottom:0}.setting-guide details{margin:0!important;padding:0!important;border:0!important}
+.setting-guide h4{font-size:14px;margin:16px 0 4px}.setting-guide details p{margin:0 0 12px}.setting-guide ol{padding-left:22px}.setting-guide li{margin:8px 0}
+label .field-guide{display:block;font-size:12px;line-height:1.7;color:#435971;margin-top:8px;font-weight:400;letter-spacing:normal}
+@media(max-width:760px){.manual-topic-list{columns:1}.setting-guide{padding:14px}.user-manual h2{font-size:22px}}
+
+.cellular-operator-controls,.cellular-band-controls{min-width:0;margin:20px 0;padding:16px;border:1px solid #d4dfe5;border-radius:8px}.cellular-operator-controls legend,.cellular-band-controls legend{font-weight:600;padding:0 6px}.cellular-operator-controls select{visibility:visible;display:block;min-width:0;max-width:100%}.cellular-band-row{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:4px 10px;margin:8px 0;padding:12px;border:1px solid #d4dfe5;border-radius:7px;cursor:pointer;overflow-wrap:anywhere}.cellular-band-row input{width:20px;height:20px;margin:0;padding:0;cursor:pointer}.cellular-band-row small{grid-column:2;margin:0}.cellular-band-row:has(input:checked){background:#e6f5ee;border-color:#137969}.cellular-band-row:focus-within{outline:2px solid #137969;outline-offset:2px}
+
+#rf-sms-status{min-height:3.2em;margin:12px 0}#rf-sms-status:empty::before{content:"\00a0"}
