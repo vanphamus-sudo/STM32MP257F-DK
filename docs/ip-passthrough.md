@@ -1,5 +1,37 @@
 # Routed IPv4 passthrough (r35)
 
+## r44 carrier DNS — 13 November 2026
+
+Passthrough now uses LTE bearer DNS, including netifd's inactive peer DNS when
+normal router operation disables peer DNS. It no longer falls back to
+`dhcp.router_dns.server` or public resolvers. Missing carrier IPv4 DNS blocks
+activation with an explicit error. DNS changes are part of the lease journal,
+so reconciliation refreshes the handoff when carrier DNS changes.
+
+Installed r44 with settings preserved, package hashes and firewall validated,
+services restarted and USB management HTTP 200. All 26 recovery/passthrough
+tests passed on the board. The installed lease reader selects carrier DNS
+`101.168.244.100` and `101.168.244.102`; passthrough was Off at verification,
+so a fresh downstream DHCP lease still requires client validation.
+No reboot or standby-slot update was performed.
+Rollback backup: `/root/router-before-r44-20261113-000133/`.
+
+## r43 activation fix — 13 November 2026
+
+Installed r43 to fix activation failing with `Command failed: ip`. This board's
+kernel has `CONFIG_IP_ADVANCED_ROUTER` disabled, so `ip -j -4 rule show` fails
+with `Address family not supported by protocol`. The prerequisite check now
+accepts that failure only when `/proc/config.gz` proves IPv4 policy routing is
+disabled; unknown configurations and other failures still block activation.
+Kernels supporting policy routing still reject custom rules.
+
+All 25 recovery/passthrough tests passed on the board, and the live activation
+preflight passes. Settings and installed file hashes were verified, firewall
+validation passed, services restarted, and USB management returned HTTP 200.
+Passthrough remains Off with no designated client MAC; downstream packet testing
+is still required. No reboot or standby-slot update was performed.
+Rollback backup: `/root/router-before-r43-20261112-233304/`.
+
 The router can hand its LTE IPv4 address to **one downstream router's Ethernet
 WAN port**. The downstream router uses that address directly; the STM32 performs
 IPv4 forwarding without source or destination NAT. This is a routed handoff, not
@@ -113,9 +145,9 @@ Unconfirmed changes also roll back across reboot.
 
 The long USER1 recovery gesture removes the passthrough interface/firewall zone,
 restores Ethernet LAN and WAN NAT, and restores USB management before reboot.
-The saved passthrough switch may still be on, but the supervisor reports it as
-**suspended** and does not reclaim the recovered Ethernet port. Apply Off before
-reconfiguring it. See [button recovery](recovery-button.md).
+Recovery also saves the passthrough switch as **Off** and clears any pending
+feature confirmation so its rollback cannot undo recovery after reboot.
+See [button recovery](recovery-button.md).
 
 ## Implementation and validation
 

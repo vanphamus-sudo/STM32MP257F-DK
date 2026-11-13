@@ -132,6 +132,11 @@ def recover(platform, write):
     """Validate all candidates before publishing. Keep a durable rollback journal."""
     edits = plans(*(platform.values(p) for p in ('network', 'dhcp', 'firewall')))
     originals = {p: (platform.CONFIG / p).read_text() for p in edits}
+    state_paths = {name: platform.STATE / name for name in ('features.json', 'feature-pending.json')}
+    state_originals = {name: path.read_text() if path.exists() else None
+                       for name, path in state_paths.items()}
+    settings = json.loads(state_originals['features.json'] or '{}')
+    settings.setdefault('passthrough', {})['enabled'] = False
     for p in edits:
         if platform.run('uci', 'changes', p):
             raise RuntimeError('Pending UCI changes: ' + p)
@@ -152,12 +157,17 @@ def recover(platform, write):
         backup.mkdir(mode=0o700)
         for p, text in originals.items():
             write(backup / p, text)
+        for name, text in state_originals.items():
+            if text is not None:
+                write(backup / name, text)
         journal = platform.STATE / 'button-recovery-pending.json'
-        write(journal, json.dumps(originals))
+        write(journal, json.dumps(originals | {'state/' + name: text for name, text in state_originals.items()}))
         os.sync()
         try:
             for p in edits:
                 write(platform.CONFIG / p, (stage / p).read_text())
+            write(state_paths['features.json'], json.dumps(settings))
+            state_paths['feature-pending.json'].unlink(missing_ok=True)
             platform.run('fw4', 'check')
             write(platform.STATE / 'button-recovery-completed', '192.168.10.1\n')
             os.sync()
@@ -166,6 +176,11 @@ def recover(platform, write):
         except BaseException:
             for p, text in originals.items():
                 write(platform.CONFIG / p, text)
+            for name, text in state_originals.items():
+                if text is None:
+                    state_paths[name].unlink(missing_ok=True)
+                else:
+                    write(state_paths[name], text)
             (platform.STATE / 'button-recovery-completed').unlink(missing_ok=True)
             os.sync()
             journal.unlink()
@@ -177,10 +192,16 @@ def restore_pending(platform, write):
     journal = platform.STATE / 'button-recovery-pending.json'
     if journal.exists():
         original = json.loads(journal.read_text())
-        if set(original) != {'network', 'dhcp', 'firewall'}:
+        required = {'network', 'dhcp', 'firewall'}
+        optional = {'state/features.json', 'state/feature-pending.json'}
+        if not required <= set(original) or set(original) - required - optional:
             raise RuntimeError('Invalid recovery journal')
         for p, text in original.items():
-            write(platform.CONFIG / p, text)
+            path = platform.STATE / p[6:] if p.startswith('state/') else platform.CONFIG / p
+            if text is None:
+                path.unlink(missing_ok=True)
+            else:
+                write(path, text)
         (platform.STATE / 'button-recovery-completed').unlink(missing_ok=True)
         os.sync()
         journal.unlink()
@@ -361,8 +382,10 @@ def main():
                                     if action == 'recover':
                                         subprocess.run(['/etc/init.d/router-web', 'stop'], check=True, timeout=30)
                                         try:
+                                            subprocess.run(['/etc/init.d/router-features', 'stop'], check=True, timeout=90)
                                             recover(platform, atomic_write)
                                         except BaseException:
+                                            subprocess.run(['/etc/init.d/router-features', 'start'], timeout=30)
                                             subprocess.run(['/etc/init.d/router-web', 'start'], timeout=30)
                                             raise
                                     hardware.light(True)

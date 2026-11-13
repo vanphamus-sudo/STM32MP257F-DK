@@ -1,4 +1,5 @@
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,6 +79,10 @@ class RecoveryTests(unittest.TestCase):
             root = Path(tmp)
             state = root / 'state'
             state.mkdir()
+            saved = {'passthrough': {'enabled': True, 'client_mac': '02:00:00:00:00:01'},
+                     'watchdog': {'enabled': True}}
+            (state / 'features.json').write_text(json.dumps(saved))
+            (state / 'feature-pending.json').write_text('pending snapshot')
             originals = {p: p + ' original' for p in ('network', 'dhcp', 'firewall')}
             for p, text in originals.items():
                 (root / p).write_text(text)
@@ -92,12 +97,29 @@ class RecoveryTests(unittest.TestCase):
                 button.recover(platform, write)
             self.assertEqual({p: (root / p).read_text() for p in originals}, originals)
             self.assertFalse((state / 'button-recovery-pending.json').exists())
-            import json
+            self.assertEqual(json.loads((state / 'features.json').read_text()), saved)
+            self.assertEqual((state / 'feature-pending.json').read_text(), 'pending snapshot')
             (state / 'button-recovery-pending.json').write_text(json.dumps(originals))
             (root / 'network').write_text('partial write')
             with patch.object(button.os, 'sync', create=True):
                 button.restore_pending(platform, write)
             self.assertEqual((root / 'network').read_text(), originals['network'])
+            platform.run.side_effect = lambda *args: ''
+            with patch.object(button.os, 'sync', create=True):
+                button.recover(platform, write)
+            recovered = json.loads((state / 'features.json').read_text())
+            self.assertFalse(recovered['passthrough']['enabled'])
+            self.assertEqual(recovered['passthrough']['client_mac'], saved['passthrough']['client_mac'])
+            self.assertEqual(recovered['watchdog'], saved['watchdog'])
+            self.assertFalse((state / 'feature-pending.json').exists())
+            # A power loss during publication restores application state too.
+            journal = originals | {'state/features.json': json.dumps(saved),
+                                   'state/feature-pending.json': 'pending snapshot'}
+            (state / 'button-recovery-pending.json').write_text(json.dumps(journal))
+            with patch.object(button.os, 'sync', create=True):
+                button.restore_pending(platform, write)
+            self.assertEqual(json.loads((state / 'features.json').read_text()), saved)
+            self.assertEqual((state / 'feature-pending.json').read_text(), 'pending snapshot')
 
 
 if __name__ == '__main__':

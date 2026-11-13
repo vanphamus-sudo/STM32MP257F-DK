@@ -1,5 +1,21 @@
 # USER1 reboot and Ethernet/USB recovery
 
+## r42 deployment — 13 November 2026
+
+Installed **1.0.0-r42** on the running board with settings preserved. Long USER1
+recovery now saves IP passthrough as Off and clears pending feature rollback,
+in addition to restoring Ethernet LAN and USB management. Application state is
+included in the durable recovery journal and restored if recovery fails.
+
+All 24 recovery/passthrough tests passed on the board using temporary fixtures;
+the physical reset/reboot gesture was not exercised. Installed package files
+matched build hashes, firewall validation passed, previously running services
+restarted, and USB management returned HTTP 200. No reboot was performed and
+the standby slot was not updated.
+
+Rollback backup (board-clock name): `/root/router-before-r42-20261112-225756/`.
+Package: `local/stm32-lte-router_1.0.0-r42_all.ipk`.
+
 Release **1.0.0-r29** adds the `router-button` service. USER1 is **B5 / PC5**;
 the indicator is **orange LD9 / PH6**. Both are active high.
 
@@ -18,6 +34,9 @@ LD9 is off. The blue Linux heartbeat is unchanged.
 
 Recovery restores untagged Ethernet LAN, removes the dedicated Ethernet WAN
 interface, and resets the mode selector to LAN with default VLAN IDs 10/20.
+It disables saved IP passthrough, removes its dedicated interface/firewall rules,
+restores WAN NAT, and clears pending feature confirmation. The feature supervisor
+is stopped before recovery to prevent concurrent network changes.
 It sets **192.168.10.1/24**, enables DHCP at **192.168.10.50–200** with 12-hour
 leases, removes custom LAN DHCP options, and restores the project's LAN
 DHCP/DNS/settings/administration/ping firewall rules. Renew the PC's DHCP lease

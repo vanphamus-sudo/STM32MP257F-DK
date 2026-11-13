@@ -5,6 +5,7 @@ neither DNAT, SNAT nor a USB-mode change is required. A journal is written befor
 changing live state. Callers hold router_features.locked().
 """
 import ipaddress
+import gzip
 import json
 import logging
 import os
@@ -96,7 +97,7 @@ def preflight(settings, backend, all_settings):
     defaults = [v for v in fw.values() if v.get('.type') == 'defaults'] + [fw.get('defaults', {})]
     if any(v.get('flow_offloading', '0') == '1' or v.get('flow_offloading_hw', '0') == '1' for v in defaults):
         raise ValueError('Disable firewall flow offloading before passthrough so every packet passes the client guard.')
-    rules = query('ip', '-j', '-4', 'rule', 'show')
+    rules = policy_rules()
     if any((int(r.get('priority', -1)), str(r.get('table'))) not in
            ((0, 'local'), (32766, 'main'), (32767, 'default')) for r in rules):
         raise ValueError('Disable custom IPv4 policy routing and wait for failover rules to clear before passthrough.')
@@ -173,11 +174,15 @@ def lease(backend):
     if default is None:
         raise ValueError('LTE has no IPv4 default route.')
     gateway = str(ipaddress.IPv4Address(default.get('nexthop') or '0.0.0.0'))
-    dns = status.get('dns-server', []) or backend.values('dhcp').get('router_dns', {}).get('server', [])
+    # netifd retains bearer DNS under inactive when peer DNS is disabled for
+    # normal router operation. Passthrough must still hand that DNS to its client.
+    dns = status.get('inactive', {}).get('dns-server', []) or status.get('dns-server', [])
     dns = [dns] if isinstance(dns, str) else dns
-    dns = [str(ipaddress.IPv4Address(d)) for d in dns if ':' not in d][:3]
+    dns = list(dict.fromkeys(str(ipaddress.IPv4Address(d)) for d in dns if ':' not in d))[:3]
+    if not dns:
+        raise ValueError('LTE has no carrier-provided IPv4 DNS servers. Reconnect LTE before enabling passthrough.')
     return dict(address=address, prefix=prefix, uplink=uplink, gateway=gateway,
-                metric=features.number(int(default.get('metric', 20)), 0, 65535), dns=dns or ['1.1.1.1'])
+                metric=features.number(int(default.get('metric', 20)), 0, 65535), dns=dns)
 
 
 def dhcp_config(data, ethernet, mac):
@@ -230,6 +235,22 @@ def firewall(data, ethernet, mac, exists=False):
 
 def query(*args):
     return json.loads(features.execute(*args))
+
+
+def policy_rules():
+    try:
+        return query('ip', '-j', '-4', 'rule', 'show')
+    except RuntimeError:
+        # Without IPv4 multiple tables the kernel rejects RTM_GETRULE. Only
+        # accept that failure when its own configuration proves rules impossible.
+        try:
+            config = gzip.decompress(Path('/proc/config.gz').read_bytes()).decode().splitlines()
+        except (OSError, EOFError, ValueError, UnicodeError):
+            config = []
+        if ('# CONFIG_IP_ADVANCED_ROUTER is not set' in config
+                or '# CONFIG_IP_MULTIPLE_TABLES is not set' in config):
+            return []
+        raise
 
 
 def nft_exists():

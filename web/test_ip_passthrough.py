@@ -1,4 +1,5 @@
 import copy
+import gzip
 import json
 from pathlib import Path
 import shutil
@@ -31,6 +32,7 @@ class PassthroughTests(unittest.TestCase):
         self.backend = Mock()
         self.backend.values.side_effect = lambda name: copy.deepcopy(self.packages[name])
         self.wan = dict(up=True, l3_device='wwan0', **{'ipv4-address':[dict(address='100.64.5.10', mask=30)],
+            'dns-server':['101.168.244.100', '101.168.244.102'],
             'route':[dict(target='0.0.0.0', mask=0, nexthop='100.64.5.9', metric=20)]})
         def ubus(obj, method):
             if obj == 'network.interface.management':
@@ -89,6 +91,22 @@ class PassthroughTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'flow offloading'):
             p.preflight(SETTINGS, self.backend, f.config())
 
+    def test_policy_rules_accepts_only_proven_kernel_limitation(self):
+        with patch.object(p, 'query', side_effect=RuntimeError('Command failed: ip')):
+            for config in (b'# CONFIG_IP_ADVANCED_ROUTER is not set\n',
+                           b'CONFIG_IP_ADVANCED_ROUTER=y\n# CONFIG_IP_MULTIPLE_TABLES is not set\n'):
+                with patch.object(Path, 'read_bytes', return_value=gzip.compress(config)):
+                    self.assertEqual(p.policy_rules(), [])
+                    p.preflight(SETTINGS, self.backend, f.config())
+            for config in (b'CONFIG_IP_MULTIPLE_TABLES=y\n', b'', b'corrupt gzip'):
+                raw = config if config == b'corrupt gzip' else gzip.compress(config)
+                with patch.object(Path, 'read_bytes', return_value=raw):
+                    with self.assertRaisesRegex(RuntimeError, 'Command failed: ip'):
+                        p.policy_rules()
+            with patch.object(Path, 'read_bytes', side_effect=FileNotFoundError):
+                with self.assertRaises(RuntimeError):
+                    p.policy_rules()
+
     def test_enable_disable_plans_preserve_usb_and_vlan_preferences(self):
         edits = p.plan(SETTINGS, self.backend)
         self.assertIn(('delete', 'network.lan_bridge.ports', None), edits['network'])
@@ -104,7 +122,7 @@ class PassthroughTests(unittest.TestCase):
 
     def test_lease_accepts_carrier_nat_and_rejects_multiple_or_management_addresses(self):
         self.assertEqual(p.lease(self.backend)['address'], '100.64.5.10')
-        self.assertEqual(p.lease(self.backend)['dns'], ['1.1.1.1','8.8.8.8'])
+        self.assertEqual(p.lease(self.backend)['dns'], ['101.168.244.100', '101.168.244.102'])
         self.wan['ipv4-address'].append(dict(address='100.64.5.11', mask=30))
         with self.assertRaises(ValueError):
             p.lease(self.backend)
@@ -122,6 +140,20 @@ class PassthroughTests(unittest.TestCase):
         self.assertIn('dhcp-option-force=121,192.168.40.1/32,0.0.0.0,0.0.0.0/0,192.168.40.1', conf)
         self.assertIn('dhcp-option-force=249,', conf)
         self.assertIn('port=0\n', conf)
+
+    def test_carrier_dns_ignores_router_resolvers_and_handles_disabled_peer_dns(self):
+        expected = ['101.168.244.100', '101.168.244.102']
+        self.assertEqual(p.lease(self.backend)['dns'], expected)
+        self.wan['inactive'] = {'dns-server': expected}
+        self.wan['dns-server'] = ['192.168.40.5', '8.8.8.8']
+        self.assertEqual(p.lease(self.backend)['dns'], expected)
+        self.wan['dns-server'] = []
+        conf = p.dhcp_config(p.lease(self.backend), 'end0', MAC)
+        self.assertIn('dhcp-option=option:dns-server,' + ','.join(expected), conf)
+        self.assertNotIn('8.8.8.8', conf)
+        self.wan['inactive']['dns-server'] = ['2001:db8::1']
+        with self.assertRaisesRegex(ValueError, 'carrier-provided IPv4 DNS'):
+            p.lease(self.backend)
 
     def test_guard_has_no_address_translation_and_blocks_other_clients(self):
         script = p.firewall(p.lease(self.backend), 'end0', MAC)
