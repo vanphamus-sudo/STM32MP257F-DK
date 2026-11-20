@@ -1,5 +1,20 @@
 # STM32MP257F-DK LTE Router
 
+[Remote AT auditing (r47)](docs/at-tcp.md) records TCP 11111 connections,
+client addresses, masked commands and execution/delivery results in the Audit
+log view. Installed and live-tested with existing router settings preserved.
+
+[Local, remote and live logs (r46)](docs/router-logs.md) adds System log pages,
+Message/Application/Kernel/Audit filtering, rotating local files, outgoing
+UDP/TCP syslog and live log windows. Installed on the running board; a bounded
+RAM file is enabled and remote forwarding awaits a collector address.
+
+[Cellular connection settings (r45)](docs/cellular-connection-settings.md) adds
+APN, cellular username/password, authentication and IP type controls, with
+webpage login changes under System. Includes automatic RG255C-GL, EM060K-GL
+and RM520N-GL detection. Installed on the running board on 20 November 2026;
+settings and login credentials preserved, AT version and LTE Internet verified.
+
 [Guided settings page (r37)](docs/guided-settings.md) adds a beginner-friendly
 user guide, glossary, searchable help, setup examples and field explanations
 throughout the router webpage. Installed on the running board with existing

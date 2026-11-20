@@ -59,6 +59,7 @@ def allowed(name):
                 'etc/init.d/router-web', 'etc/init.d/router-mqtt', 'etc/init.d/router-at',
                 'etc/init.d/router-serial', 'etc/hotplug.d/openvpn/30-router',
                 'etc/init.d/router-update-confirm',
+                'etc/init.d/router-modem', 'usr/sbin/router-modem-bind', 'etc/hotplug.d/usb/30-router-modem',
                 'etc/init.d/router-storage', 'lib/preinit/09_router_storage',
                 'etc/init.d/router-features', 'etc/init.d/router-traffic', 'etc/init.d/router-modbus', 'etc/init.d/router-button',
                 'lib/upgrade/keep.d/stm32-lte-router')))

@@ -1,5 +1,52 @@
 # LTE AT TCP server
 
+## Remote AT auditing (r47)
+
+TCP 11111 now emits structured `authpriv.notice` records tagged
+`router-at-audit`. View them in **System → Local Log → Audit**; search for
+`router-at-audit` to isolate these events. The live log windows and local file
+capture include them. Native remote syslog forwards them when configured.
+
+Events include connection open/close, single-client rejection, command receipt,
+invalid/oversized command rejection, and command completion. Each has a UTC
+timestamp, observed client IP/port, listener port and connection ID. Command
+records include a per-connection command ID, outcome, elapsed milliseconds,
+reply byte count and whether sending the reply completed. Close reasons
+distinguish client closure, idle timeout, reply timeout and socket errors.
+An observed IP identifies the network peer, not an authenticated person.
+
+Parameterized command values are conservatively replaced with `[redacted]`,
+including PIN/password changes, authentication setup and unknown vendor
+setters. Invalid bytes and oversized payloads are never copied into audit
+records. Raw modem replies are not recorded, since queries can return secrets;
+the client still receives its normal reply. Results distinguish success,
+modem errors, unavailable/busy conditions, invalid/oversized commands and
+unknown router software commands. JSON escaping prevents forged multiline
+audit entries.
+
+Before forwarding a modem command, the service sets ModemManager's operational
+log level to INFO, retaining its required `--debug` AT-access permission but
+preventing a duplicate DEBUG trace of the raw command. If this privacy guard
+cannot be applied, that modem command is rejected and the failure is audited.
+Router software commands such as `AT$VERSION` do not access the modem.
+This applies to TCP 11111; it does not add a dedicated audit trail to webpage
+AT requests or direct serial/SSH modem access. Historical debug logs are not
+rewritten.
+
+Logging is bounded by the configured system buffer/file retention; it is not
+an immutable archival trail. RAM logs are cleared on reboot unless persistent
+file storage or remote syslog is configured.
+
+Deployed **1.0.0-r47** on 20 November 2026. Package:
+`local/stm32-lte-router_1.0.0-r47_all.ipk`; rollback backup:
+`/root/router-before-r47-20261120-072002/` (suffix uses board UTC).
+232 web tests passed with platform-specific skips. Socket tests covered
+masking, success/failure, invalid/oversized requests, busy rejection and idle
+timeout. Live checks verified ATI, version reporting, a harmless unsupported
+vendor command, client metadata, local file capture and absence of its private
+parameter from raw logs. LTE remained online. Existing settings were preserved;
+no reboot or standby-slot update was performed.
+
 R7 restores TCP port 5000 to a fully transparent data bridge. Every byte,
 including `AT$VERSION`, is sent to the external USB serial device. There is
 no command parsing on that port. Existing one-client and idle policies remain.

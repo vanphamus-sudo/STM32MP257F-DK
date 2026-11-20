@@ -282,6 +282,36 @@ async function refreshModem() {
   }
 }
 el('refresh-modem').addEventListener('click', refreshModem);
+el('open-modem-map').addEventListener('click', async () => {
+  if (!csrf) return;
+  const button = el('open-modem-map'), message = el('modem-map-message'), link = el('modem-map-link');
+  const mapWindow = window.open('about:blank', '_blank');
+  if (mapWindow) {
+    mapWindow.opener = null;
+    mapWindow.document.title = 'Finding serving cell location';
+    mapWindow.document.body.textContent = 'Looking up the approximate router location using its serving cell…';
+  }
+  button.disabled = true;
+  link.hidden = true;
+  link.removeAttribute('href');
+  message.textContent = 'Looking up serving cell location…';
+  try {
+    const location = await api('modem/location', {});
+    if (!csrf) { if (mapWindow) mapWindow.close(); return; }
+    const lat = location.latitude, lon = location.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new Error('Invalid map coordinates.');
+    const url = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`;
+    link.href = url;
+    link.hidden = false;
+    message.textContent = `Approximate serving cell location: ${lat.toFixed(5)}, ${lon.toFixed(5)} (${location.source}). This is not a GPS position.`;
+    if (mapWindow && !mapWindow.closed) mapWindow.location.replace(url);
+  } catch (error) {
+    if (mapWindow && !mapWindow.closed) mapWindow.close();
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 navigation.querySelectorAll('a[href="#modem-panel"]').forEach(link => link.addEventListener('click', refreshModem));
 
 function showTraffic(s) {

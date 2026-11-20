@@ -26,6 +26,9 @@ import traffic_stats
 import modbus_settings
 import serial_assignment
 import router_features
+import cellular_settings
+import router_logs
+from urllib.parse import urlsplit, parse_qs
 
 OPENWRT = Path('/etc/openwrt_release').exists()
 if OPENWRT:
@@ -210,6 +213,12 @@ def status():
 class Handler(BaseHTTPRequestHandler):
     server_version = 'Router'
 
+    def log_request(self, code='-', size='-'):
+        # Live polling must not fill the very log buffer it is displaying.
+        if self.command == 'GET' and urlsplit(self.path).path == '/api/logs' and code == 200:
+            return
+        super().log_request(code, size)
+
     def setup(self):
         super().setup()
         self.connection.settimeout(10)
@@ -253,6 +262,9 @@ class Handler(BaseHTTPRequestHandler):
                   '/port-forwarding.js': ('port-forwarding.js', 'text/javascript; charset=utf-8'),
                   '/dhcp-reservations.js': ('dhcp-reservations.js', 'text/javascript; charset=utf-8'),
                   '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                  '/cellular.js': ('cellular.js', 'text/javascript; charset=utf-8'),
+                  '/logs.js': ('logs.js', 'text/javascript; charset=utf-8'),
+                  '/logs.html': ('logs.html', 'text/html; charset=utf-8'),
                   '/mqtt.js': ('mqtt.js', 'text/javascript; charset=utf-8'),
                   '/modbus.js': ('modbus.js', 'text/javascript; charset=utf-8'),
                   '/firmware.js': ('firmware.js', 'text/javascript; charset=utf-8'),
@@ -321,6 +333,31 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, usb_tethering.status(platform))
             except Exception:
                 return self.reply(503, dict(error='Cannot read USB tethering settings.'))
+        if self.path == '/api/logs/settings' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, router_logs.settings(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read logging settings.'))
+        if urlsplit(self.path).path == '/api/logs' and OPENWRT:
+            try:
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) - {'category', 'source', 'limit', 'search'} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError('Invalid log query.')
+                options = {key: value[0] for key, value in query.items()}
+                if 'limit' in options:
+                    options['limit'] = int(options['limit'])
+                return self.reply(200, router_logs.read(platform, **options))
+            except (ValueError, TypeError):
+                return self.reply(400, dict(error='Invalid log source, category, line count or search.'))
+            except Exception:
+                return self.reply(503, dict(error='Log source is temporarily unavailable.'))
+        if self.path == '/api/cellular' and OPENWRT:
+            try:
+                with LOCK:
+                    return self.reply(200, cellular_settings.status(platform))
+            except Exception:
+                return self.reply(503, dict(error='Cannot read cellular connection settings.'))
         if self.path == '/api/ethernet' and OPENWRT:
             try:
                 with LOCK:
@@ -406,6 +443,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(409, dict(error='Confirm or roll back the pending router network change first.'))
         if OPENWRT and self.path in ('/api/ethernet', '/api/port-forwards', '/api/openvpn', '/api/openvpn/toggle') and router_features.config()['passthrough']['enabled']:
             return self.reply(409, dict(error='Disable IP passthrough before changing Ethernet, NAT rules or router VPN settings.'))
+        if self.path == '/api/logs/settings':
+            if not OPENWRT:
+                return self.reply(404, dict(error='Logging settings require OpenWrt.'))
+            try:
+                with LOCK:
+                    if router_features.public_pending():
+                        return self.reply(409, dict(error='Confirm or roll back the pending network change first.'))
+                    return self.reply(200, router_logs.save(data, platform, atomic_write))
+            except (ValueError, TypeError, KeyError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                return self.reply(503, dict(error='Could not apply logging settings. Check the log service over USB.'))
+        if self.path == '/api/cellular':
+            if not OPENWRT:
+                return self.reply(404, dict(error='Cellular settings require OpenWrt.'))
+            try:
+                with LOCK:
+                    if router_features.public_pending():
+                        return self.reply(409, dict(error='Confirm or roll back the pending network change first.'))
+                    return self.reply(200, cellular_settings.save(data, platform, atomic_write))
+            except (ValueError, TypeError, KeyError) as error:
+                return self.reply(400, dict(error=str(error)))
+            except Exception:
+                return self.reply(503, dict(error='Could not apply cellular settings. Check the router over USB.'))
         if self.path == '/api/logout':
             with LOCK:
                 for token, item in list(SESSIONS.items()):
@@ -442,6 +503,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self.log_error('Settings apply failed; recovery attempted')
                 return self.reply(500, dict(error='Could not apply settings. Check board services over USB before retrying.'))
+        if self.path == '/api/modem/location' and OPENWRT:
+            try:
+                return self.reply(200, modem_details.locate(platform))
+            except ValueError as error:
+                return self.reply(400, dict(error=str(error)))
+            except RuntimeError as error:
+                return self.reply(503, dict(error=str(error)))
+            except Exception:
+                return self.reply(503, dict(error='Cell location is temporarily unavailable.'))
         if self.path == '/api/modem/at':
             if set(data) == {'command'} and isinstance(data['command'], str) and all(32 <= ord(c) <= 126 for c in data['command']) and len(data['command']) <= 256:
                 reserved = version_info.reserved_response(data['command'])

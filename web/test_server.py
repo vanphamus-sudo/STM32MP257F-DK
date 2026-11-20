@@ -189,6 +189,43 @@ class HTTPTests(unittest.TestCase):
                 self.assertEqual(self.request('/api/port-forwards', {}, auth)[0], 409)
                 self.assertEqual(self.request('/api/openvpn/toggle', {'enabled':True}, auth)[0], 409)
 
+    def test_logs_authentication_bounds_csrf_and_settings(self):
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+             patch.object(server.router_logs, 'settings', return_value={'local':{},'remote':{}}), \
+             patch.object(server.router_logs, 'read', return_value={'lines':['test']}) as read, \
+             patch.object(server.router_logs, 'save', return_value={'message':'saved'}) as save, \
+             patch.object(server.router_features, 'public_pending', return_value=None) as pending:
+            for path in ('/api/logs?category=kernel','/api/logs/settings'):
+                self.assertEqual(self.request(path)[0],401)
+            self.assertEqual(self.request('/api/logs/settings',{})[0],401)
+            _,headers,body=self.request('/api/login',dict(username='admin',password='test-password'))
+            auth={'Cookie':headers['Set-Cookie'].split(';')[0],'X-CSRF-Token':json.loads(body)['csrf']}
+            self.assertEqual(self.request('/api/logs?category=kernel&limit=50&search=usb',headers=auth)[0],200)
+            self.assertEqual(read.call_args.kwargs,dict(category='kernel',limit=50,search='usb'))
+            for path in ('/api/logs?limit=no','/api/logs?source=file&source=buffer','/api/logs?command=reboot'):
+                self.assertEqual(self.request(path,headers=auth)[0],400)
+            self.assertEqual(self.request('/api/logs/settings',{}, {'Cookie':auth['Cookie']})[0],403)
+            self.assertEqual(self.request('/api/logs/settings',{},auth)[0],200)
+            pending.return_value={'revision':'x'}
+            self.assertEqual(self.request('/api/logs/settings',{},auth)[0],409)
+            self.assertEqual(save.call_count,1)
+
+    def test_cellular_auth_csrf_and_pending_guard(self):
+        with patch.object(server, 'OPENWRT', True), patch.object(server, 'platform', create=True), \
+             patch.object(server.cellular_settings, 'status', return_value={'password_saved': True}), \
+             patch.object(server.cellular_settings, 'save', return_value={'message': 'saved'}) as save, \
+             patch.object(server.router_features, 'public_pending', return_value=None) as pending:
+            self.assertEqual(self.request('/api/cellular')[0], 401)
+            self.assertEqual(self.request('/api/cellular', {})[0], 401)
+            _, headers, body = self.request('/api/login', dict(username='admin', password='test-password'))
+            auth = {'Cookie': headers['Set-Cookie'].split(';')[0], 'X-CSRF-Token': json.loads(body)['csrf']}
+            self.assertEqual(self.request('/api/cellular', headers=auth)[0], 200)
+            self.assertEqual(self.request('/api/cellular', {}, {'Cookie': auth['Cookie']})[0], 403)
+            self.assertEqual(self.request('/api/cellular', {}, auth)[0], 200)
+            pending.return_value = {'revision': 'test'}
+            self.assertEqual(self.request('/api/cellular', {}, auth)[0], 409)
+            self.assertEqual(save.call_count, 1)
+
     def test_account_change_and_session_revocation(self):
         def login(username, password):
             return self.request('/api/login', dict(username=username, password=password))

@@ -45,7 +45,16 @@ def build(output):
     control = ('Package: stm32-lte-router\nVersion: ' + version + '-r' + release +
                '\nArchitecture: all\nDepends: ' + ', '.join(name[1:] for name in dependencies) +
                '\nSection: net\nDescription: STM32 LTE router settings and provisioning\n')
-    data = []
+    data = [('usr/lib/router-web/modem_auto.py', (root / 'openwrt/modem_auto.py').read_bytes(), 0o644),
+            ('usr/lib/router-web/at_audit.py', (root / 'web/at_audit.py').read_bytes(), 0o644),
+            ('usr/lib/router-web/router_logs.py', (root / 'web/router_logs.py').read_bytes(), 0o644),
+            ('usr/lib/router-web/logs.js', (root / 'web/logs.js').read_bytes(), 0o644),
+            ('usr/lib/router-web/logs.html', (root / 'web/logs.html').read_bytes(), 0o644),
+            ('usr/lib/router-web/cellular_settings.py', (root / 'web/cellular_settings.py').read_bytes(), 0o644),
+            ('usr/lib/router-web/cellular.js', (root / 'web/cellular.js').read_bytes(), 0o644),
+            ('usr/sbin/router-modem-bind', (root / 'openwrt/router-modem-bind.sh').read_bytes(), 0o755),
+            ('etc/init.d/router-modem', (root / 'openwrt/router-modem.init').read_bytes(), 0o755),
+            ('etc/hotplug.d/usb/30-router-modem', (root / 'openwrt/router-modem.hotplug').read_bytes(), 0o755)]
     for name in ('cellular_info.py', 'mobile-networks.json', 'ip_passthrough.py', 'router_features.py', 'router_supervisor.py', 'router-features.js', 'user-guide.js', 'usb_tethering.py', 'usb-tethering.js', 'serial_assignment.py', 'modbus_collection.py', 'modbus_settings.py', 'modbus.js', 'traffic_stats.py', 'mqtt_metrics.py', 'system_update.py', 'firmware_update.py', 'update_bundle.py', 'firmware.js', 'mqtt_events.py', 'mqtt_settings.py', 'mqtt.js', 'mqtt_client.py', 'mqtt_protocol.py', 'mqtt_data.py', 'mqtt_proxy.py', 'server.py', 'wifi.py', 'openwrt_backend.py', 'openvpn_client.py', 'modem_details.py', 'serial_tcp.py', 'at_tcp.py', 'version_info.py', 'port_forwarding.py', 'port-forwarding.js', 'dhcp_reservations.py', 'dhcp-reservations.js', 'ethernet.py', 'recovery_button.py', 'ethernet.js', 'index.html', 'app.js', 'style.css'):
         data.append(('usr/lib/router-web/' + name, (root / 'web' / name).read_bytes(), 0o644))
     for name in ('provision.py', 'initialize.py', 'provision-system-updates.py'):

@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=stm32-lte-router
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=44
+PKG_RELEASE:=47
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
 
 include $(INCLUDE_DIR)/package.mk
@@ -27,6 +27,10 @@ define Build/Compile
 endef
 
 define Package/stm32-lte-router/install
+	$(INSTALL_DIR) $(1)/usr/sbin $(1)/etc/hotplug.d/usb
+	$(INSTALL_BIN) ./router-modem-bind.sh $(1)/usr/sbin/router-modem-bind
+	$(INSTALL_BIN) ./router-modem.init $(1)/etc/init.d/router-modem
+	$(INSTALL_BIN) ./router-modem.hotplug $(1)/etc/hotplug.d/usb/30-router-modem
 	$(INSTALL_DIR) $(1)/usr/lib/router-web $(1)/etc/init.d $(1)/etc/router-web $(1)/lib/upgrade/keep.d $(1)/etc/hotplug.d/openvpn
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/* $(1)/usr/lib/router-web/
 	$(INSTALL_BIN) ./router-web.init $(1)/etc/init.d/router-web

@@ -1,0 +1,5 @@
+#!/bin/sh
+[ "$ACTION" = add ] || exit 0
+case "$PRODUCT" in
+    2c7c/316/*|2c7c/0316/*|2c7c/30b/*|2c7c/030b/*|2c7c/801/*|2c7c/0801/*) /usr/sbin/router-modem-bind ;;
+esac
